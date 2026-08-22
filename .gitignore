@@ -1,0 +1,15 @@
+# Go binaries & tests
+*.exe
+*.test
+*.out
+bin/
+vendor/
+
+# Dashboard Node & Vite
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.vite/
+
+# OS & Environment
+.DS_Store
+.env
