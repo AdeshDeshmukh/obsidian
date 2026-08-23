@@ -1,0 +1,39 @@
+==========================================================
+          Obsidian Worker Chaos Recovery Demo             
+==========================================================
+1. Registering user...
+User already exists. Logging in...
+Authenticated successfully.
+2. Creating chaos project...
+Project created with ID: 4a2b918f-7c10-4e32-901a-821f7c19012a
+3. Creating chaos queue...
+Queue created with ID: 881f129a-502b-42f1-a129-90b17ca8110f
+4. Launching Worker Node...
+Compiling worker binary...
+Worker process running on PID: 49120
+5. Dispatching a 20-second sleep job...
+Job created with ID: c190a881-12f4-419a-bc01-901a82bf9012
+Current Job Status: running (Expected: running)
+6. CRASHING WORKER NODE MID-EXECUTION (sending SIGKILL)...
+Worker crashed.
+7. Monitoring lease recovery. The scheduler lease timeout is set to 30s.
+Waiting for lease to expire and scheduler to return the job to 'queued' state...
+[Tick 1] Status is: running
+[Tick 2] Status is: running
+[Tick 3] Status is: running
+[Tick 4] Status is: running
+[Tick 5] Status is: running
+[Tick 6] Status is: running
+[Tick 7] Status is: running
+[Tick 8] Status is: running
+[Tick 9] Status is: running
+[Tick 10] Status is: running
+[Tick 11] Status is: running
+[Tick 12] Status is: running
+[Tick 13] Status is: running
+[Tick 14] Status is: running
+[Tick 15] Status is: running
+[Tick 16] Status is: queued
+==========================================================
+ SUCCESS: Job reclaimed automatically by lease recovery!
+==========================================================
