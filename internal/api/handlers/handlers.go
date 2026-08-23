@@ -911,7 +911,7 @@ func (h *Handler) ListWorkers(w http.ResponseWriter, r *http.Request) {
 		CurrentJobType *string   `json:"current_job_type,omitempty"`
 	}
 
-	var workers []Worker
+	workers := []Worker{}
 	for rows.Next() {
 		var wk Worker
 		if err := rows.Scan(&wk.ID, &wk.Hostname, &wk.StartedAt, &wk.LastSeenAt, &wk.Status, &wk.CurrentJobID, &wk.CurrentJobType); err != nil {
@@ -943,7 +943,7 @@ func (h *Handler) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
 		AvgDurationMs int64       `json:"avg_duration_ms"`
 	}
 
-	var metrics HealthMetrics
+	metrics := HealthMetrics{QueueSizes: []QueueSize{}}
 
 	// Query queue sizes
 	rows, err := h.pool.Query(ctx, `
@@ -1014,7 +1014,7 @@ func (h *Handler) GetThroughput(w http.ResponseWriter, r *http.Request) {
 		Failures  int64     `json:"failures"`
 	}
 
-	var series []ThroughputPoint
+	series := []ThroughputPoint{}
 	for rows.Next() {
 		var pt ThroughputPoint
 		if err := rows.Scan(&pt.Hour, &pt.Successes, &pt.Failures); err != nil {
@@ -1053,7 +1053,7 @@ func (h *Handler) ListDLQ(w http.ResponseWriter, r *http.Request) {
 		MovedAt       time.Time              `json:"moved_at"`
 	}
 
-	var entries []DLQEntry
+	entries := []DLQEntry{}
 	for rows.Next() {
 		var e DLQEntry
 		var payloadBytes []byte
