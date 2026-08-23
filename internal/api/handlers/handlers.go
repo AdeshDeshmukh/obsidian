@@ -246,7 +246,7 @@ func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		CreatedAt time.Time `json:"created_at"`
 	}
 
-	var projects []Project
+	projects := []Project{}
 	for rows.Next() {
 		var p Project
 		if err := rows.Scan(&p.ID, &p.Name, &p.APIKey, &p.CreatedAt); err != nil {
@@ -335,7 +335,7 @@ func (h *Handler) ListQueues(w http.ResponseWriter, r *http.Request) {
 		Stats            QueueStats `json:"stats"`
 	}
 
-	var queues []Queue
+	queues := []Queue{}
 	for rows.Next() {
 		var q Queue
 		if err := rows.Scan(&q.ID, &q.Name, &q.Priority, &q.ConcurrencyLimit, &q.IsPaused, &q.CreatedAt,
@@ -628,7 +628,7 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt time.Time `json:"updated_at"`
 	}
 
-	var jobs []Job
+	jobs := []Job{}
 	for rows.Next() {
 		var j Job
 		if err := rows.Scan(&j.ID, &j.JobType, &j.Status, &j.Priority, &j.RunAt, &j.Attempt, &j.CreatedAt, &j.UpdatedAt); err != nil {
@@ -1116,4 +1116,87 @@ func (h *Handler) CreateBatchJobs(w http.ResponseWriter, r *http.Request) {
 		"count":   len(createdIDs),
 		"job_ids": createdIDs,
 	})
+}
+
+// Retry Policy Handlers
+type CreateRetryPolicyReq struct {
+	Name        string `json:"name"`
+	Strategy    string `json:"strategy"`
+	BaseDelayMs int    `json:"base_delay_ms"`
+	MaxDelayMs  int    `json:"max_delay_ms"`
+	MaxAttempts int    `json:"max_attempts"`
+}
+
+func (h *Handler) CreateRetryPolicy(w http.ResponseWriter, r *http.Request) {
+	var req CreateRetryPolicyReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeError(w, http.StatusBadRequest, "invalid retry policy payload")
+		return
+	}
+
+	strategy := strings.ToLower(strings.TrimSpace(req.Strategy))
+	if strategy != "fixed" && strategy != "linear" && strategy != "exponential" {
+		strategy = "fixed"
+	}
+	if req.BaseDelayMs <= 0 {
+		req.BaseDelayMs = 1000
+	}
+	if req.MaxDelayMs <= 0 {
+		req.MaxDelayMs = 300000
+	}
+	if req.MaxAttempts <= 0 {
+		req.MaxAttempts = 5
+	}
+
+	var policyID string
+	err := h.pool.QueryRow(r.Context(), `
+		INSERT INTO retry_policies (name, strategy, base_delay_ms, max_delay_ms, max_attempts)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id
+	`, req.Name, strategy, req.BaseDelayMs, req.MaxDelayMs, req.MaxAttempts).Scan(&policyID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create retry policy: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"id":            policyID,
+		"name":          req.Name,
+		"strategy":      strategy,
+		"base_delay_ms": req.BaseDelayMs,
+		"max_delay_ms":  req.MaxDelayMs,
+		"max_attempts":  req.MaxAttempts,
+	})
+}
+
+func (h *Handler) ListRetryPolicies(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.pool.Query(r.Context(), `
+		SELECT id, name, strategy, base_delay_ms, max_delay_ms, max_attempts
+		FROM retry_policies
+		ORDER BY name ASC
+	`)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list retry policies: "+err.Error())
+		return
+	}
+	defer rows.Close()
+
+	type Policy struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Strategy    string `json:"strategy"`
+		BaseDelayMs int    `json:"base_delay_ms"`
+		MaxDelayMs  int    `json:"max_delay_ms"`
+		MaxAttempts int    `json:"max_attempts"`
+	}
+
+	policies := []Policy{}
+	for rows.Next() {
+		var p Policy
+		if err := rows.Scan(&p.ID, &p.Name, &p.Strategy, &p.BaseDelayMs, &p.MaxDelayMs, &p.MaxAttempts); err == nil {
+			policies = append(policies, p)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, policies)
 }
