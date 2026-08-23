@@ -1,0 +1,515 @@
+{
+	"info": {
+		"_postman_id": "a901f4c2-9012-421f-821f-901a82bf9012",
+		"name": "Obsidian Distributed Job Scheduler API",
+		"description": "Complete REST API collection for Obsidian Distributed Job Scheduler, including Auth, Projects, Queues, Jobs, DLQ, Workers, and System Observability Metrics.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "authToken",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "projectId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "queueId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "jobId",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Register Account",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"developer@obsidian.io\",\n  \"password\": \"securepassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/register",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"register"
+							]
+						}
+					}
+				},
+				{
+					"name": "Login Account",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"developer@obsidian.io\",\n  \"password\": \"securepassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"login"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Projects",
+			"item": [
+				{
+					"name": "Create Project",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Production Workloads\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/projects",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"projects"
+							]
+						}
+					}
+				},
+				{
+					"name": "List Projects",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/projects",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"projects"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Queues",
+			"item": [
+				{
+					"name": "Create Queue",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"email-notifications\",\n  \"priority\": 10,\n  \"concurrency_limit\": 5\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/projects/{{projectId}}/queues",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{projectId}}",
+								"queues"
+							]
+						}
+					}
+				},
+				{
+					"name": "List Queues",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/projects/{{projectId}}/queues",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"projects",
+								"{{projectId}}",
+								"queues"
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Queue (Pause/Resume/Limits)",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"priority\": 15,\n  \"concurrency_limit\": 10,\n  \"is_paused\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/queues/{{queueId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"queues",
+								"{{queueId}}"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Jobs",
+			"item": [
+				{
+					"name": "Create Immediate Job",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"job_type\": \"noop\",\n  \"payload\": {},\n  \"priority\": 5,\n  \"idempotency_key\": \"idempotent-key-001\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/queues/{{queueId}}/jobs",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"queues",
+								"{{queueId}}",
+								"jobs"
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Batch Jobs",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"jobs\": [\n    { \"job_type\": \"noop\", \"payload\": {}, \"priority\": 1 },\n    { \"job_type\": \"log\", \"payload\": { \"message\": \"Batch log job 2\" }, \"priority\": 2 }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/queues/{{queueId}}/jobs/batch",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"queues",
+								"{{queueId}}",
+								"jobs",
+								"batch"
+							]
+						}
+					}
+				},
+				{
+					"name": "List Jobs (Paginated)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/queues/{{queueId}}/jobs?limit=20&page=1&status=queued",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"queues",
+								"{{queueId}}",
+								"jobs"
+							],
+							"query": [
+								{ "key": "limit", "value": "20" },
+								{ "key": "page", "value": "1" },
+								{ "key": "status", "value": "queued" }
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Job Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/jobs/{{jobId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"jobs",
+								"{{jobId}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "Retry Failed / DLQ Job",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/jobs/{{jobId}}/retry",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"jobs",
+								"{{jobId}}",
+								"retry"
+							]
+						}
+					}
+				},
+				{
+					"name": "Cancel Job",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/jobs/{{jobId}}/cancel",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"jobs",
+								"{{jobId}}",
+								"cancel"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Dead Letter Queue",
+			"item": [
+				{
+					"name": "List DLQ Entries",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/dlq",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"dlq"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Workers & Observability",
+			"item": [
+				{
+					"name": "List Workers",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/workers",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"workers"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get System Health Metrics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/metrics/system-health",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"metrics",
+								"system-health"
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Throughput Timeline",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{authToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/metrics/throughput",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"metrics",
+								"throughput"
+							]
+						}
+					}
+				}
+			]
+		}
+	]
+}
