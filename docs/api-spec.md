@@ -315,3 +315,99 @@ Private endpoints require the header: `Authorization: Bearer <JWT_TOKEN>`.
       "dlq_count": 1
     }
     ```
+
+### Get Throughput Time-Series
+*   **Endpoint**: `GET /api/metrics/throughput`
+*   **Headers**: `Authorization: Bearer <token>`
+*   **Response (200 OK)**:
+    ```json
+    [
+      {
+        "hour": "2026-08-23T14:00:00Z",
+        "successes": 42,
+        "failures": 1
+      }
+    ]
+    ```
+
+---
+
+## 5. Additional Services
+
+### Get Current User Profile
+*   **Endpoint**: `GET /api/auth/me`
+*   **Headers**: `Authorization: Bearer <token>`
+*   **Response (200 OK)**:
+    ```json
+    {
+      "id": "d70e4c63-4613-43bb-a5a5-48beab4bf6f3",
+      "email": "user@example.com",
+      "role": "admin"
+    }
+    ```
+
+### Create Batch Jobs
+*   **Endpoint**: `POST /api/queues/{queueId}/jobs/batch`
+*   **Headers**: `Authorization: Bearer <token>`
+*   **Body**:
+    ```json
+    {
+      "jobs": [
+        { "job_type": "noop", "payload": {}, "priority": 1 },
+        { "job_type": "log", "payload": { "message": "Batch 2" }, "priority": 5 }
+      ]
+    }
+    ```
+*   **Response (201 Created)**:
+    ```json
+    {
+      "count": 2,
+      "job_ids": ["a9cb78c9-...", "b9cb78c9-..."]
+    }
+    ```
+
+### Retry Policies Management
+*   **Endpoint**: `POST /api/retry-policies`
+*   **Headers**: `Authorization: Bearer <token>`
+*   **Body**:
+    ```json
+    {
+      "name": "exponential-backoff",
+      "strategy": "exponential",
+      "base_delay_ms": 1000,
+      "max_delay_ms": 60000,
+      "max_attempts": 5
+    }
+    ```
+*   **Response (201 Created)**:
+    ```json
+    {
+      "id": "c10e4c63-4613-43bb-a5a5-48beab4bf6f3",
+      "name": "exponential-backoff",
+      "strategy": "exponential",
+      "base_delay_ms": 1000,
+      "max_delay_ms": 60000,
+      "max_attempts": 5
+    }
+    ```
+
+*   **Endpoint**: `GET /api/retry-policies`
+*   **Headers**: `Authorization: Bearer <token>`
+*   **Response (200 OK)**:
+    ```json
+    [
+      {
+        "id": "c10e4c63-4613-43bb-a5a5-48beab4bf6f3",
+        "name": "exponential-backoff",
+        "strategy": "exponential",
+        "base_delay_ms": 1000,
+        "max_delay_ms": 60000,
+        "max_attempts": 5
+      }
+    ]
+    ```
+
+### WebSocket Live Stream
+*   **Endpoint**: `GET /api/ws?token=<token>`
+*   **Protocol**: WebSocket (Hijacked HTTP RFC 6455)
+*   **Real-time Events**: `job.updated`, `worker.heartbeat`

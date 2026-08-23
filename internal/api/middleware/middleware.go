@@ -24,14 +24,26 @@ const (
 	UserRoleKey contextKey = "userRole"
 )
 
+type responseWriterRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rec *responseWriterRecorder) WriteHeader(statusCode int) {
+	rec.statusCode = statusCode
+	rec.ResponseWriter.WriteHeader(statusCode)
+}
+
 // Logger middleware logs incoming requests using structured JSON format
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r)
+		rec := &responseWriterRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(rec, r)
 		slog.Info("http request", 
 			"method", r.Method, 
 			"uri", r.RequestURI, 
+			"status", rec.statusCode,
 			"remote_addr", r.RemoteAddr, 
 			"duration_ms", time.Since(start).Milliseconds(),
 		)

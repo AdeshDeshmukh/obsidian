@@ -151,3 +151,16 @@ FOR EACH ROW
 WHEN (NEW.status = 'queued')
 EXECUTE FUNCTION notify_job_queued();
 
+-- Auto update timestamp trigger
+CREATE OR REPLACE FUNCTION update_updated_at_column() RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trg_update_jobs_updated_at
+BEFORE UPDATE ON jobs
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+

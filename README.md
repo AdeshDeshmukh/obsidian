@@ -119,6 +119,6 @@ k6 run load-test/k6-claim-throughput.js --env API_URL=http://localhost:8080 --en
 ---
 
 ## Project Documentation
-- Detailed design trade-offs, SKIP LOCKED, and heartbeats: [Design Decisions](file:///Users/adeshkishordeshmukh/Documents/Hackthons/College_AdiQuity/Obsidien/docs/design-decisions.md)
-- Complete endpoint spec sheets: [API Documentation](file:///Users/adeshkishordeshmukh/Documents/Hackthons/College_AdiQuity/Obsidien/docs/api-spec.md)
-- Postman API Collection: [Postman Collection](file:///Users/adeshkishordeshmukh/Documents/Hackthons/College_AdiQuity/Obsidien/docs/postman-collection.json)
+- Detailed design trade-offs, SKIP LOCKED, and heartbeats: [Design Decisions](docs/design-decisions.md)
+- Complete endpoint spec sheets: [API Documentation](docs/api-spec.md)
+- Postman API Collection: [Postman Collection](docs/postman-collection.json)

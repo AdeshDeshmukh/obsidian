@@ -74,6 +74,12 @@ func NewRouter(pool *pgxpool.Pool) http.Handler {
 		// Dead Letter Queue
 		r.Get("/api/dlq", h.ListDLQ)
 
+		// Retry Policies
+		r.Route("/api/retry-policies", func(r chi.Router) {
+			r.With(middleware.RequireRole("admin", "member")).Post("/", h.CreateRetryPolicy)
+			r.Get("/", h.ListRetryPolicies)
+		})
+
 		// Metrics
 		r.Get("/api/metrics/system-health", h.GetSystemHealth)
 		r.Get("/api/metrics/throughput", h.GetThroughput)

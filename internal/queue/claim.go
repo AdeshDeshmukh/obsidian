@@ -133,17 +133,73 @@ func ClaimBatch(ctx context.Context, pool *pgxpool.Pool, queueID, workerID strin
 // ReclaimExpired scans for running jobs that have exceeded their heartbeat lease,
 // returns them to 'queued' for retry, and increments their attempts.
 func ReclaimExpired(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
-	tag, err := pool.Exec(ctx, `
-		UPDATE jobs
-		SET status = 'queued',
-		    claimed_by = NULL,
-		    lease_expires_at = NULL,
-		    attempt = attempt + 1,
-		    updated_at = now()
-		WHERE status IN ('running', 'claimed') AND lease_expires_at < now()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	dlqRows, err := tx.Query(ctx, `
+		SELECT j.id, j.queue_id, j.payload, j.attempt, 
+		       COALESCE(rp.max_attempts, q_rp.max_attempts, 5) as max_attempts
+		FROM jobs j
+		LEFT JOIN retry_policies rp ON j.retry_policy_id = rp.id
+		LEFT JOIN queues q ON j.queue_id = q.id
+		LEFT JOIN retry_policies q_rp ON q.default_retry_policy_id = q_rp.id
+		WHERE j.status IN ('running', 'claimed') AND j.lease_expires_at < now()
 	`)
 	if err != nil {
 		return 0, err
 	}
-	return tag.RowsAffected(), nil
+
+	type expiredJob struct {
+		id          string
+		queueID     string
+		payload     []byte
+		attempt     int
+		maxAttempts int
+	}
+	var expiredList []expiredJob
+	for dlqRows.Next() {
+		var ej expiredJob
+		if err := dlqRows.Scan(&ej.id, &ej.queueID, &ej.payload, &ej.attempt, &ej.maxAttempts); err == nil {
+			expiredList = append(expiredList, ej)
+		}
+	}
+	dlqRows.Close()
+
+	var reclaimedCount int64
+	for _, ej := range expiredList {
+		if ej.attempt+1 >= ej.maxAttempts {
+			// Move to DLQ
+			_, _ = tx.Exec(ctx, `
+				UPDATE jobs SET status = 'dead_letter', updated_at = now() WHERE id = $1
+			`, ej.id)
+			_, _ = tx.Exec(ctx, `
+				INSERT INTO dead_letter_queue (original_job_id, queue_id, payload, failure_reason, attempts_made, moved_at)
+				VALUES ($1, $2, $3, 'Worker lease expired and max attempts reached', $4, now())
+			`, ej.id, ej.queueID, ej.payload, ej.attempt+1)
+			_, _ = tx.Exec(ctx, `
+				INSERT INTO job_logs (job_id, level, message)
+				VALUES ($1, 'error', 'Lease expired and max attempts reached. Moved to DLQ')
+			`, ej.id)
+		} else {
+			// Requeue
+			tag, _ := tx.Exec(ctx, `
+				UPDATE jobs
+				SET status = 'queued',
+				    claimed_by = NULL,
+				    lease_expires_at = NULL,
+				    attempt = attempt + 1,
+				    updated_at = now()
+				WHERE id = $1
+			`, ej.id)
+			reclaimedCount += tag.RowsAffected()
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return reclaimedCount, nil
 }
