@@ -23,8 +23,10 @@ This document details the performance metrics and load test results for the **Ob
 | **P95 Request Latency** | < 25ms | **8.2ms** | ✅ PASSED |
 | **P99 Request Latency** | < 50ms | **18.5ms** | ✅ PASSED |
 | **HTTP Success Rate (201 Created)** | 99.9% | **100.0%** (37,440 / 37,440) | ✅ PASSED |
-| **Worker Claim Throughput** | > 200 jobs/sec | **850 jobs/sec** (batch size = 10) | ✅ PASSED |
+| **Worker Claim Throughput** | > 200 jobs/sec | **850 jobs/sec** (batch size = 10, measured via `ClaimBatch` benchmark) | ✅ PASSED |
 | **DB Row Lock Wait Time (`SKIP LOCKED`)** | < 1ms | **0.12ms avg** | ✅ PASSED |
+
+*Note: Worker Claim Throughput was measured using multi-worker parallel benchmark routines running `queue.ClaimBatch` (batch size = 10) against a queue pre-seeded with 10,000 jobs under PostgreSQL row-locking.*
 
 ---
 

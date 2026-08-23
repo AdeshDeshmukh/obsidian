@@ -1,37 +1,68 @@
 # Obsidian — Distributed Job Scheduling Platform
 
-Obsidian is a highly reliable, production-inspired distributed background job scheduling and execution engine. It is built in **Go** for maximum concurrency, utilizes **PostgreSQL** for atomic locking guarantees, and provides a premium **React-based dashboard** for queue management and system observability.
+Obsidian is a highly reliable, production-inspired distributed background job scheduling and execution engine. It is built in **Go** for maximum concurrency, utilizes **PostgreSQL** for atomic locking guarantees, and provides a premium **React 18 / Vite dashboard** for queue management and real-time observability.
+
+---
+
+## ⚡ Quick Start
+
+```bash
+# 1. Environment configuration
+cp .env.example .env
+
+# 2. Start PostgreSQL container
+make db-up
+
+# 3. Apply database schema & triggers
+PGPASSWORD=obsidian psql -h localhost -U postgres -d obsidian -f internal/db/migrations/001_init.sql
+
+# 4. Launch services (separate terminal windows):
+make run-api        # Terminal 1: REST API Server on http://localhost:8080
+make run-scheduler  # Terminal 2: Cron Dispatcher & Lease Janitor
+make run-worker     # Terminal 3: Worker Node Daemon
+make run-dashboard  # Terminal 4: React Dashboard on http://localhost:5173
+```
 
 ---
 
 ## Key Core Invariants
 
-1.  **Atomic Job Claims via `FOR UPDATE SKIP LOCKED`**: Obsidian uses row-level locking to ensure that multiple workers polling the same database queue never double-claim or execute the same job concurrently.
-2.  **HA Cron Scheduling via Advisory Locks**: Rather than using external state managers (like Redis), Obsidian secures cron-dispatch scheduling ticks across multiple scheduler nodes using PostgreSQL advisory locks per queue.
-3.  **Heartbeat Lease Recovery**: Active worker nodes send periodic heartbeats. If a worker node crashes mid-execution, its lease expires, and the scheduler auto-reclaims the task, returning it to the queue for at-least-once execution.
-4.  **DAG Dependency Resolution**: Enforce job ordering where dependent jobs are held back until parent jobs flip to the `completed` state.
+1. **Atomic Job Claims via `FOR UPDATE SKIP LOCKED`**: Obsidian uses row-level locking to ensure that multiple workers polling the same database queue never double-claim or execute the same job concurrently.
+2. **HA Cron Scheduling via Advisory Locks**: Rather than using external state managers (like Redis), Obsidian secures cron-dispatch scheduling ticks across multiple scheduler nodes using PostgreSQL advisory locks per queue.
+3. **Heartbeat Lease Recovery**: Active worker nodes send periodic heartbeats. If a worker node crashes mid-execution, its lease expires, and the scheduler auto-reclaims the task, returning it to the queue for at-least-once execution.
+4. **DAG Dependency Resolution**: Enforce job ordering where dependent jobs are held back until parent jobs flip to the `completed` state.
 
 ---
 
-## System Architecture
+## 🎁 Bonus Features Implemented
+
+- **Role-Based Access Control (RBAC)**: Enforces three distinct roles (`admin`, `member`, `viewer`) embedded in JWT claims. Administrative actions like queue pausing, concurrency adjustments, and job cancellations require `admin` privileges.
+- **AI Failure Summaries**: Integrates with Google Gemini 1.5 Flash (`GEMINI_API_KEY`) to generate human-readable SRE root-cause failure diagnoses and fix recommendations for Dead Letter Queue (`dead_letter`) jobs, with smart heuristic fallback.
+- **WebSocket Live Telemetry**: Real-time event streaming (`ws://localhost:8080/api/ws?token=<JWT>`) using a custom RFC 6455 `http.Hijacker` WebSocket hub broadcasting `job.updated` and `worker.heartbeat` events.
+- **DAG Workflow Dependencies**: Jobs declare dependencies via `job_dependencies`. The worker claim query uses a non-blocking `NOT EXISTS` predicate to hold child jobs until all parent jobs complete.
+- **Event-Driven Instant Execution**: Utilizes PostgreSQL `LISTEN/NOTIFY` triggers (`job_queued`) to wake up idle workers immediately upon job insertion without polling delay.
+
+---
+
+## 🏗️ System Architecture
 
 ![Obsidian System Architecture](docs/architecture.png)
 
 ```mermaid
 graph TD
-    Client[Web Dashboard / API Client] -->|REST API| Server[Express-like chi API Server]
+    Client[Web Dashboard / API Client] -->|REST API| Server[Chi HTTP API Server]
     Server -->|Read/Write| DB[(PostgreSQL Database)]
-    WorkerPool[Worker Pool / Instances] -->|Poll & Claim Jobs| DB
+    WorkerPool[Worker Nodes / Instances] -->|Poll & Claim Jobs| DB
     WorkerPool -->|Execute Tasks| WorkerPool
     WorkerPool -->|Worker Heartbeats| DB
     WorkerPool -->|Log Executions| DB
-    CronService[Cron Scheduler Service] -->|Enqueue Recurring Jobs| DB
-    SchedulerJanitor[Scheduler Janitor Loop] -->|Reclaim Expired leases| DB
+    CronService[Cron Scheduler Daemon] -->|Enqueue Recurring Jobs| DB
+    SchedulerJanitor[Scheduler Janitor Loop] -->|Reclaim Expired Leases| DB
 ```
 
 ---
 
-## Database ER Diagram
+## 🗄️ Database ER Diagram
 
 ![Obsidian Database ER Diagram](docs/er-diagram.png)
 
@@ -52,58 +83,24 @@ erDiagram
 
 ---
 
-## Setup & Installation
+## 🧪 Testing & Verification
 
-### Prerequisites
-- Go 1.22+
-- Node.js 20+
-- Docker & Docker Compose
+### Unit & Integration Test Suite
+The automated test suite (`internal/...`) verifies critical core functionality:
+- **Retry Backoff Strategies** (`TestComputeBackoff`): Table-driven unit tests for `fixed`, `linear`, and `exponential` backoff strategies with maximum delay capping.
+- **API Validation & Auth** (`handlers_test.go`): Verifies JWT authorization rejection, input validation, and pagination metadata structure.
+- **Idempotency Key Deduplication**: Tests `UNIQUE (queue_id, idempotency_key)` constraints, returning `200 OK` for duplicate submissions vs `201 Created` for new jobs.
+- **Atomic Concurrency Claims** (`claim_integration_test.go`): Validates that 5 concurrent worker routines claiming from a shared queue never receive duplicate job assignments.
+- **Lease Expiry & Failure Recovery**: Asserts `ReclaimExpired` returns stuck jobs to `queued` state and moves jobs reaching `max_attempts` to the Dead Letter Queue (`dead_letter`).
+- **DAG Workflow Blocking** (`dag_integration_test.go`): Verifies child jobs remain unclaimable until parent jobs transition to `completed`.
 
-### 1. Spin Up PostgreSQL
-Use docker-compose to start the Postgres container:
-```bash
-make db-up
-```
-
-### 2. Database Migrations
-Deploy the database schema:
-```bash
-# Connect to PostgreSQL and apply the schema:
-PGPASSWORD=obsidian psql -h localhost -U postgres -d obsidian -f internal/db/migrations/001_init.sql
-```
-
-### 3. Run Backend Services
-Start the REST API, worker daemon, and cron scheduler in separate terminal windows:
-```bash
-# Start HTTP API on port :8080
-make run-api
-
-# Start Scheduler Daemon (Cron dispatcher + Lease Janitor)
-make run-scheduler
-
-# Start Worker Node (Polls and runs jobs)
-make run-worker
-```
-
-### 4. Run React Dashboard
-Start the Vite development server:
-```bash
-make run-dashboard
-```
-Open `http://localhost:5173` to access the dashboard.
-
----
-
-## Testing & Verification
-
-### Run Unit Tests
-Run the Go test suites covering backoff delay logic:
+Run all tests:
 ```bash
 make test
 ```
 
-### Run Chaos Recovery Demo
-To verify Obsidian's crash recovery under failure, run the automated chaos script. It enqueues a long-running job, launches a worker, kills the worker mid-execution, and asserts that the scheduler janitor reclaims the job and schedules a retry:
+### Chaos Recovery Demo
+Demonstrates worker crash recovery and failover:
 ```bash
 make chaos-demo
 ```
@@ -118,7 +115,8 @@ k6 run load-test/k6-claim-throughput.js --env API_URL=http://localhost:8080 --en
 
 ---
 
-## Project Documentation
-- Detailed design trade-offs, SKIP LOCKED, and heartbeats: [Design Decisions](docs/design-decisions.md)
-- Complete endpoint spec sheets: [API Documentation](docs/api-spec.md)
-- Postman API Collection: [Postman Collection](docs/postman-collection.json)
+## 📚 Project Documentation
+
+- **Design Trade-offs & Invariants**: [Design Decisions](docs/design-decisions.md)
+- **Complete Endpoint Specifications**: [API Documentation](docs/api-spec.md)
+- **Postman API Collection**: [Postman Collection](docs/postman-collection.json)

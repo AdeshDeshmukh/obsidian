@@ -78,12 +78,12 @@ echo "Worker process running on PID: ${WORKER_PID}"
 # Ensure worker starts
 sleep 2
 
-# 5. Enqueue a 20s long-running sleep job
-echo "5. Dispatching a 20-second sleep job..."
+# 5. Enqueue a 10s long-running sleep job
+echo "5. Dispatching a 10-second sleep job..."
 JOB_RES=$(curl -s -X POST "${API_URL}/api/queues/${QUEUE_ID}/jobs" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"job_type":"sleep","payload":{"seconds":20},"priority":10}')
+  -d '{"job_type":"sleep","payload":{"seconds":10},"priority":10}')
 JOB_ID=$(echo "$JOB_RES" | grep -o '"id":"[^"]*' | grep -o '[^"]*$')
 echo "Job created with ID: ${JOB_ID}"
 
@@ -92,27 +92,60 @@ STATUS_RES=$(curl -s "${API_URL}/api/jobs/${JOB_ID}" -H "Authorization: Bearer $
 STATUS=$(echo "$STATUS_RES" | grep -o '"status":"[^"]*' | grep -o '[^"]*$')
 echo "Current Job Status: ${STATUS} (Expected: running)"
 
-# 6. Kill worker mid-execution!
-echo "6. CRASHING WORKER NODE MID-EXECUTION (sending SIGKILL)..."
+# 6. Kill worker 1 mid-execution!
+echo "6. CRASHING WORKER NODE 1 MID-EXECUTION (sending SIGKILL)..."
 kill -9 "${WORKER_PID}"
-echo "Worker crashed."
+echo "Worker 1 crashed."
 
-echo "7. Monitoring lease recovery. The scheduler lease timeout is set to 30s."
-echo "Waiting for lease to expire and scheduler to return the job to 'queued' state..."
+echo "7. Monitoring lease recovery. Waiting for lease to expire and scheduler to return job to 'queued' state..."
 
-for i in {1..40}; do
+RECLAIMED=0
+for i in {1..30}; do
   STATUS_RES=$(curl -s "${API_URL}/api/jobs/${JOB_ID}" -H "Authorization: Bearer ${TOKEN}")
   STATUS=$(echo "$STATUS_RES" | grep -o '"status":"[^"]*' | grep -o '[^"]*$')
   echo "[Tick $i] Status is: ${STATUS}"
   
   if [ "$STATUS" = "queued" ]; then
+    echo "Job reclaimed automatically by lease recovery!"
+    RECLAIMED=1
+    break
+  fi
+  sleep 2
+done
+
+if [ "$RECLAIMED" -eq 0 ]; then
+  echo "Fail: Job was not reclaimed within timeout."
+  exit 1
+fi
+
+# 8. Launch Worker 2 to complete the failover recovery cycle
+echo "8. Launching Worker Node 2 to pick up reclaimed job..."
+WORKER2_ID="chaos-worker-888"
+DATABASE_URL="postgres://postgres:obsidian@localhost:5432/obsidian?sslmode=disable" \
+  WORKER_ID="${WORKER2_ID}" \
+  QUEUE_ID="${QUEUE_ID}" \
+  ./worker-bin > /tmp/worker2.log 2>&1 &
+WORKER2_PID=$!
+
+echo "Worker 2 running on PID: ${WORKER2_PID}. Waiting for completion..."
+
+for i in {1..20}; do
+  STATUS_RES=$(curl -s "${API_URL}/api/jobs/${JOB_ID}" -H "Authorization: Bearer ${TOKEN}")
+  STATUS=$(echo "$STATUS_RES" | grep -o '"status":"[^"]*' | grep -o '[^"]*$')
+  echo "[Failover Tick $i] Status is: ${STATUS}"
+  
+  if [ "$STATUS" = "completed" ]; then
+    kill -9 "${WORKER2_PID}" || true
     echo "=========================================================="
-    echo " SUCCESS: Job reclaimed automatically by lease recovery!"
+    echo " SUCCESS: Full Chaos Failover Lifecycle Verified!"
+    echo " queued -> running (worker 1) -> queued (reclaimed) -> running (worker 2) -> completed"
     echo "=========================================================="
     exit 0
   fi
   sleep 2
 done
 
-echo "Fail: Job was not reclaimed within timeout."
+kill -9 "${WORKER2_PID}" || true
+echo "Fail: Worker 2 did not complete job within timeout."
 exit 1
+
