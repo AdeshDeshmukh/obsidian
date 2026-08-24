@@ -684,7 +684,11 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 		AISummary      string                 `json:"ai_summary,omitempty"`
 	}
 
-	var j JobDetails
+	j := JobDetails{
+		Executions: []interface{}{},
+		Logs:       []interface{}{},
+		Payload:    map[string]interface{}{},
+	}
 	var rawPayload []byte
 
 	err := h.pool.QueryRow(ctx, `
