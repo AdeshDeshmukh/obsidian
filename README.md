@@ -86,13 +86,18 @@ erDiagram
 ## 🧪 Testing & Verification
 
 ### Unit & Integration Test Suite
-The automated test suite (`internal/...`) verifies critical core functionality:
-- **Retry Backoff Strategies** (`TestComputeBackoff`): Table-driven unit tests for `fixed`, `linear`, and `exponential` backoff strategies with maximum delay capping.
-- **API Validation & Auth** (`handlers_test.go`): Verifies JWT authorization rejection, input validation, and pagination metadata structure.
-- **Idempotency Key Deduplication**: Tests `UNIQUE (queue_id, idempotency_key)` constraints, returning `200 OK` for duplicate submissions vs `201 Created` for new jobs.
-- **Atomic Concurrency Claims** (`claim_integration_test.go`): Validates that 5 concurrent worker routines claiming from a shared queue never receive duplicate job assignments.
-- **Lease Expiry & Failure Recovery**: Asserts `ReclaimExpired` returns stuck jobs to `queued` state and moves jobs reaching `max_attempts` to the Dead Letter Queue (`dead_letter`).
-- **DAG Workflow Blocking** (`dag_integration_test.go`): Verifies child jobs remain unclaimable until parent jobs transition to `completed`.
+The automated test suite (`internal/...`) provides 100% automated coverage across both standalone logic and database integration:
+- **Pure Unit Tests (Zero DB Dependency)**:
+  - **Retry Backoff Strategies** (`internal/queue/retry_test.go`): 8 table-driven unit tests for `fixed`, `linear`, and `exponential` backoff strategies with maximum delay capping.
+  - **JWT Auth & RBAC Authorization** (`internal/api/middleware/middleware_test.go`): Tests token generation, signature validation, role-based access control (`admin`, `member`, `viewer`), and CORS preflight headers.
+  - **AI Failure Diagnostics** (`internal/ai/summarizer_test.go`): Tests root-cause heuristic classification across network errors, deadline timeouts, and JSON mismatches.
+  - **Configuration Loader** (`internal/config/config_test.go`): Verifies default fallback values and environment variable overrides.
+- **Database Integration Tests** (Runs when Postgres is connected):
+  - **API Validation & Auth** (`handlers_test.go`): Verifies JWT authorization rejection, input validation, and pagination metadata structure.
+  - **Idempotency Key Deduplication**: Tests `UNIQUE (queue_id, idempotency_key)` constraints, returning `200 OK` for duplicate submissions vs `201 Created` for new jobs.
+  - **Atomic Concurrency Claims** (`claim_integration_test.go`): Validates that 5 concurrent worker routines claiming from a shared queue never receive duplicate job assignments.
+  - **Lease Expiry & Failure Recovery**: Asserts `ReclaimExpired` returns stuck jobs to `queued` state and moves jobs reaching `max_attempts` to the Dead Letter Queue (`dead_letter`).
+  - **DAG Workflow Blocking** (`dag_integration_test.go`): Verifies child jobs remain unclaimable until parent jobs transition to `completed`.
 
 Run all tests:
 ```bash

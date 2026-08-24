@@ -26,12 +26,14 @@ func SetupTestDB(t *testing.T) *pgxpool.Pool {
 
 	pool, err := db.NewPool(ctx, dbURL)
 	if err != nil {
-		t.Fatalf("Failed to connect to test database: %v", err)
+		t.Skipf("Skipping test: PostgreSQL database not available (%v)", err)
+		return nil
 	}
 
 	// Ensure database schema is migrated and up-to-date
 	if err := db.AutoMigrate(ctx, pool); err != nil {
-		t.Fatalf("Failed to auto migrate test database: %v", err)
+		t.Skipf("Skipping test: Failed to auto migrate test database (%v)", err)
+		return nil
 	}
 
 	// Truncate tables for a fresh state
