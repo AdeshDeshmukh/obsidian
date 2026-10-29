@@ -11,6 +11,7 @@ import (
 
 	"obsidian/internal/ai"
 	"obsidian/internal/api/middleware"
+	"obsidian/internal/queue"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
@@ -556,8 +557,12 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Add dependencies (DAG)
+	// Add dependencies (DAG) with cycle validation
 	for _, parentID := range req.DependsOn {
+		if err := queue.CheckCyclicDependency(ctx, tx, jobID, parentID); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		_, err = tx.Exec(ctx, `
 			INSERT INTO job_dependencies (job_id, depends_on_job_id)
 			VALUES ($1, $2)
