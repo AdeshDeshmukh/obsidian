@@ -308,7 +308,7 @@ func (h *Handler) ListQueues(w http.ResponseWriter, r *http.Request) {
 		       count(j.id) FILTER (WHERE j.status = 'failed') as failed_count
 		FROM queues q
 		LEFT JOIN jobs j ON j.queue_id = q.id
-		WHERE q.project_id = $1
+		WHERE q.project_id = $1 AND q.deleted_at IS NULL
 		GROUP BY q.id
 		ORDER BY q.created_at DESC
 	`, projectID)
@@ -376,7 +376,7 @@ func (h *Handler) UpdateQueue(w http.ResponseWriter, r *http.Request) {
 	var currentPaused bool
 
 	err = tx.QueryRow(ctx, `
-		SELECT priority, concurrency_limit, is_paused FROM queues WHERE id = $1 FOR UPDATE
+		SELECT priority, concurrency_limit, is_paused FROM queues WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
 	`, queueID).Scan(&currentPriority, &currentLimit, &currentPaused)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "queue not found")
@@ -396,7 +396,7 @@ func (h *Handler) UpdateQueue(w http.ResponseWriter, r *http.Request) {
 	_, err = tx.Exec(ctx, `
 		UPDATE queues
 		SET priority = $1, concurrency_limit = $2, is_paused = $3
-		WHERE id = $4
+		WHERE id = $4 AND deleted_at IS NULL
 	`, currentPriority, currentLimit, currentPaused, queueID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "update failed")
@@ -414,6 +414,27 @@ func (h *Handler) UpdateQueue(w http.ResponseWriter, r *http.Request) {
 		"concurrency_limit": currentLimit,
 		"is_paused":         currentPaused,
 	})
+}
+
+// DeleteQueue soft-deletes a queue (admin only)
+func (h *Handler) DeleteQueue(w http.ResponseWriter, r *http.Request) {
+	queueID := chi.URLParam(r, "queueId")
+	ctx := r.Context()
+
+	tag, err := h.pool.Exec(ctx, `
+		UPDATE queues
+		SET deleted_at = now()
+		WHERE id = $1 AND deleted_at IS NULL
+	`, queueID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete queue: "+err.Error())
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "queue not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // Job Handlers
@@ -448,6 +469,13 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
+	// Verify that queue exists and is not soft-deleted
+	var isQueuePaused bool
+	if err := h.pool.QueryRow(ctx, `SELECT is_paused FROM queues WHERE id = $1 AND deleted_at IS NULL`, queueID).Scan(&isQueuePaused); err != nil {
+		writeError(w, http.StatusNotFound, "queue not found")
+		return
+	}
 
 	// If cron_expr is provided, register a recurring job definition
 	if req.CronExpr != nil && *req.CronExpr != "" {
@@ -570,20 +598,21 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	jobTypeFilter := r.URL.Query().Get("job_type")
 
 	query := `
-		SELECT id, job_type, status, priority, run_at, attempt, created_at, updated_at
-		FROM jobs
-		WHERE queue_id = $1
+		SELECT j.id, j.job_type, j.status, j.priority, j.run_at, j.attempt, j.created_at, j.updated_at
+		FROM jobs j
+		JOIN queues q ON j.queue_id = q.id
+		WHERE j.queue_id = $1 AND q.deleted_at IS NULL
 	`
 	args := []interface{}{queueID}
 	placeholderIndex := 2
 
 	if statusFilter != "" {
-		query += fmt.Sprintf(" AND status = $%d", placeholderIndex)
+		query += fmt.Sprintf(" AND j.status = $%d", placeholderIndex)
 		args = append(args, statusFilter)
 		placeholderIndex++
 	}
 	if jobTypeFilter != "" {
-		query += fmt.Sprintf(" AND job_type = $%d", placeholderIndex)
+		query += fmt.Sprintf(" AND j.job_type = $%d", placeholderIndex)
 		args = append(args, jobTypeFilter)
 		placeholderIndex++
 	}
@@ -607,7 +636,7 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := (page - 1) * limit
 
-	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", placeholderIndex, placeholderIndex+1)
+	query += fmt.Sprintf(" ORDER BY j.created_at DESC LIMIT $%d OFFSET $%d", placeholderIndex, placeholderIndex+1)
 	args = append(args, limit, offset)
 
 	rows, err := h.pool.Query(r.Context(), query, args...)
@@ -640,16 +669,16 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 
 	// Get total count for pagination metadata
 	var total int64
-	countQuery := `SELECT count(*) FROM jobs WHERE queue_id = $1`
+	countQuery := `SELECT count(*) FROM jobs j JOIN queues q ON j.queue_id = q.id WHERE j.queue_id = $1 AND q.deleted_at IS NULL`
 	countArgs := []interface{}{queueID}
 	countIdx := 2
 	if statusFilter != "" {
-		countQuery += fmt.Sprintf(" AND status = $%d", countIdx)
+		countQuery += fmt.Sprintf(" AND j.status = $%d", countIdx)
 		countArgs = append(countArgs, statusFilter)
 		countIdx++
 	}
 	if jobTypeFilter != "" {
-		countQuery += fmt.Sprintf(" AND job_type = $%d", countIdx)
+		countQuery += fmt.Sprintf(" AND j.job_type = $%d", countIdx)
 		countArgs = append(countArgs, jobTypeFilter)
 	}
 	_ = h.pool.QueryRow(r.Context(), countQuery, countArgs...).Scan(&total)
@@ -1084,6 +1113,14 @@ func (h *Handler) CreateBatchJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
+	// Verify that queue exists and is not soft-deleted
+	var isQueuePaused bool
+	if err := h.pool.QueryRow(ctx, `SELECT is_paused FROM queues WHERE id = $1 AND deleted_at IS NULL`, queueID).Scan(&isQueuePaused); err != nil {
+		writeError(w, http.StatusNotFound, "queue not found")
+		return
+	}
+
 	tx, err := h.pool.Begin(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "transaction error")
