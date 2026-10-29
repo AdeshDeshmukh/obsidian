@@ -11,6 +11,7 @@ import (
 	"obsidian/internal/api/middleware"
 	"obsidian/internal/config"
 	"obsidian/internal/db"
+	"obsidian/internal/metrics"
 )
 
 func main() {
@@ -33,6 +34,8 @@ func main() {
 		slog.Error("Failed to initialize database schema", "error", err)
 		os.Exit(1)
 	}
+
+	metrics.StartMetricsScraper(context.Background(), pool)
 
 	router := api.NewRouter(pool)
 

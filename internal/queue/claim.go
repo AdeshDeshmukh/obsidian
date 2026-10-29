@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"obsidian/internal/metrics"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,6 +22,9 @@ type ClaimedJob struct {
 // ClaimBatch atomically claims up to `limit` due jobs for this worker from the specified queue,
 // ensuring the queue is not paused and all parent job dependencies are completed.
 func ClaimBatch(ctx context.Context, pool *pgxpool.Pool, queueID, workerID string, limit int, leaseDuration time.Duration) ([]ClaimedJob, error) {
+	start := time.Now()
+	defer metrics.RecordClaimDuration(start)
+
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, err

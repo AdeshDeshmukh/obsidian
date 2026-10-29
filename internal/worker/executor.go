@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"obsidian/internal/api/ws"
+	"obsidian/internal/metrics"
 	"obsidian/internal/queue"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -106,6 +107,7 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 		if err := queue.MoveToDeadLetter(ctx, pool, job, err.Error()); err != nil {
 			slog.Error("Failed moving job to DLQ", "job_id", job.ID, "error", err)
 		}
+		metrics.JobsFailed.WithLabelValues(job.QueueID).Inc()
 		ws.Broadcast("job.updated", map[string]interface{}{"id": job.ID, "queue_id": job.QueueID, "status": "dead_letter"})
 		return
 	}
@@ -165,7 +167,11 @@ func markCompleted(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob
 		return err
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	metrics.JobsCompleted.WithLabelValues(job.QueueID).Inc()
+	return nil
 }
 
 func loadRetryPolicy(ctx context.Context, pool *pgxpool.Pool, jobID string) queue.RetryPolicy {

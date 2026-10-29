@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chi_middleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func NewRouter(pool *pgxpool.Pool) http.Handler {
@@ -29,6 +30,9 @@ func NewRouter(pool *pgxpool.Pool) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"healthy"}`))
 	})
+
+	// Prometheus Metrics
+	r.Handle("/metrics", promhttp.Handler())
 
 	// Public Routes
 	r.Route("/api/auth", func(r chi.Router) {
