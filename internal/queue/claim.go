@@ -95,6 +95,15 @@ func ClaimBatch(ctx context.Context, pool *pgxpool.Pool, queueID, workerID strin
 		if err := rows.Scan(&j.ID, &j.QueueID, &j.JobType, &j.Payload, &j.Attempt); err != nil {
 			return nil, err
 		}
+
+		allowed, err := ConsumeToken(ctx, tx, j.QueueID)
+		if err != nil {
+			return nil, err
+		}
+		if !allowed {
+			continue
+		}
+
 		claimed = append(claimed, j)
 		ids = append(ids, uuid.MustParse(j.ID))
 	}

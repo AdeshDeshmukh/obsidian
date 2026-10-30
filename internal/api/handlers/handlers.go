@@ -438,6 +438,37 @@ func (h *Handler) DeleteQueue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+type SetRateLimitReq struct {
+	RatePerSecond float64 `json:"rate_per_second"`
+}
+
+func (h *Handler) SetQueueRateLimit(w http.ResponseWriter, r *http.Request) {
+	queueID := chi.URLParam(r, "queueId")
+	var req SetRateLimitReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RatePerSecond <= 0 {
+		writeError(w, http.StatusBadRequest, "rate_per_second must be a positive number")
+		return
+	}
+
+	var exists bool
+	err := h.pool.QueryRow(r.Context(), `SELECT true FROM queues WHERE id = $1 AND deleted_at IS NULL`, queueID).Scan(&exists)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "queue not found")
+		return
+	}
+
+	if err := queue.SetQueueRateLimit(r.Context(), h.pool, queueID, req.RatePerSecond); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to configure rate limit: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"queue_id":        queueID,
+		"rate_per_second": req.RatePerSecond,
+		"status":          "configured",
+	})
+}
+
 // Job Handlers
 type CreateJobReq struct {
 	JobType        string                 `json:"job_type"`

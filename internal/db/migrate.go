@@ -32,9 +32,17 @@ func AutoMigrate(ctx context.Context, pool *pgxpool.Pool) error {
 		_, _ = pool.Exec(ctx, `
 			ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin';
 			ALTER TABLE queues ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL;
+			ALTER TABLE queues ADD COLUMN IF NOT EXISTS rate_limit_per_second INT NULL;
 			CREATE INDEX IF NOT EXISTS idx_queues_not_deleted ON queues (project_id) WHERE deleted_at IS NULL;
 			ALTER TABLE retry_policies DROP CONSTRAINT IF EXISTS retry_policies_strategy_check;
 			ALTER TABLE retry_policies ADD CONSTRAINT retry_policies_strategy_check CHECK (strategy IN ('fixed', 'linear', 'exponential', 'exponential_jitter'));
+			CREATE TABLE IF NOT EXISTS queue_rate_limits (
+				queue_id        UUID PRIMARY KEY REFERENCES queues(id) ON DELETE CASCADE,
+				tokens          DOUBLE PRECISION NOT NULL,
+				max_tokens      DOUBLE PRECISION NOT NULL DEFAULT 10,
+				refill_rate     DOUBLE PRECISION NOT NULL DEFAULT 10,
+				last_refill_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+			);
 			CREATE OR REPLACE FUNCTION notify_job_queued() RETURNS TRIGGER AS $$
 			BEGIN
 			  PERFORM pg_notify('job_queued', NEW.queue_id::text);
