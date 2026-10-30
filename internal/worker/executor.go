@@ -77,7 +77,13 @@ func init() {
 
 // Execute runs the job handler, handles heartbeats, updates metrics and handles retries or DLQ.
 func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, workerID string) {
-	slog.Info("Running job", "job_id", job.ID, "job_type", job.JobType, "attempt", job.Attempt, "worker_id", workerID)
+	slog.Info("Running job",
+		"job_id", job.ID,
+		"job_type", job.JobType,
+		"queue_id", job.QueueID,
+		"attempt", job.Attempt,
+		"worker_id", workerID,
+	)
 
 	// Start lease renewal heartbeat
 	stopHeartbeat := StartHeartbeat(ctx, pool, job.ID, 10*time.Second, 30*time.Second)
@@ -90,22 +96,51 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 	duration := time.Since(start)
 
 	if err == nil {
-		slog.Info("Job completed successfully", "job_id", job.ID, "duration_ms", duration.Milliseconds())
+		slog.Info("Job completed successfully",
+			"job_id", job.ID,
+			"queue_id", job.QueueID,
+			"attempt", job.Attempt,
+			"worker_id", workerID,
+			"duration_ms", duration.Milliseconds(),
+		)
 		if err := markCompleted(ctx, pool, job, workerID, duration); err != nil {
-			slog.Error("Failed marking job completed", "job_id", job.ID, "error", err)
+			slog.Error("Failed marking job completed",
+				"job_id", job.ID,
+				"queue_id", job.QueueID,
+				"worker_id", workerID,
+				"error", err,
+			)
 		}
 		ws.Broadcast("job.updated", map[string]interface{}{"id": job.ID, "queue_id": job.QueueID, "status": "completed"})
 		return
 	}
 
-	slog.Error("Job execution failed", "job_id", job.ID, "error", err)
+	slog.Error("Job execution failed",
+		"job_id", job.ID,
+		"queue_id", job.QueueID,
+		"attempt", job.Attempt,
+		"worker_id", workerID,
+		"duration_ms", duration.Milliseconds(),
+		"error", err,
+	)
 	policy := loadRetryPolicy(ctx, pool, job.ID)
 	
 	// Check if attempts exhausted
 	if job.Attempt+1 >= policy.MaxAttempts {
-		slog.Warn("Job attempts exhausted, moving to DLQ", "job_id", job.ID, "attempts", job.Attempt+1, "max_attempts", policy.MaxAttempts)
+		slog.Warn("Job attempts exhausted, moving to DLQ",
+			"job_id", job.ID,
+			"queue_id", job.QueueID,
+			"attempts", job.Attempt+1,
+			"max_attempts", policy.MaxAttempts,
+			"worker_id", workerID,
+		)
 		if err := queue.MoveToDeadLetter(ctx, pool, job, err.Error()); err != nil {
-			slog.Error("Failed moving job to DLQ", "job_id", job.ID, "error", err)
+			slog.Error("Failed moving job to DLQ",
+				"job_id", job.ID,
+				"queue_id", job.QueueID,
+				"worker_id", workerID,
+				"error", err,
+			)
 		}
 		metrics.JobsFailed.WithLabelValues(job.QueueID).Inc()
 		ws.Broadcast("job.updated", map[string]interface{}{"id": job.ID, "queue_id": job.QueueID, "status": "dead_letter"})
@@ -114,9 +149,20 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 
 	// Requeue with backoff delay
 	delay := queue.ComputeBackoff(policy, job.Attempt)
-	slog.Info("Requeuing job with backoff delay", "job_id", job.ID, "delay_ms", delay.Milliseconds())
+	slog.Info("Requeuing job with backoff delay",
+		"job_id", job.ID,
+		"queue_id", job.QueueID,
+		"attempt", job.Attempt,
+		"delay_ms", delay.Milliseconds(),
+		"worker_id", workerID,
+	)
 	if err := queue.RequeueWithDelay(ctx, pool, job.ID, delay, err.Error()); err != nil {
-		slog.Error("Failed requeuing job", "job_id", job.ID, "error", err)
+		slog.Error("Failed requeuing job",
+			"job_id", job.ID,
+			"queue_id", job.QueueID,
+			"worker_id", workerID,
+			"error", err,
+		)
 	}
 	ws.Broadcast("job.updated", map[string]interface{}{"id": job.ID, "queue_id": job.QueueID, "status": "queued"})
 }

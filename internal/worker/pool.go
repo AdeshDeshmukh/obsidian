@@ -27,7 +27,7 @@ func New(pool *pgxpool.Pool, workerID, queueID string, concurrency int) *Pool {
 func (p *Pool) Run(ctx context.Context) {
 	// Register the worker in the DB
 	if err := RegisterWorker(ctx, p.pool, p.workerID, "active"); err != nil {
-		slog.Warn("Failed to register worker in DB", "worker_id", p.workerID, "error", err)
+		slog.Warn("Failed to register worker in DB", "worker_id", p.workerID, "queue_id", p.queueID, "error", err)
 	}
 
 	// Start self-heartbeat
@@ -62,7 +62,7 @@ func (p *Pool) Run(ctx context.Context) {
 
 		jobs, err := queue.ClaimBatch(ctx, p.pool, p.queueID, p.workerID, freeSlots, 30*time.Second)
 		if err != nil {
-			slog.Error("Error claiming job batch", "worker_id", p.workerID, "error", err)
+			slog.Error("Error claiming job batch", "worker_id", p.workerID, "queue_id", p.queueID, "error", err)
 			return
 		}
 
@@ -80,7 +80,7 @@ func (p *Pool) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("Shutdown signal received, draining active jobs...", "worker_id", p.workerID)
+			slog.Info("Shutdown signal received, draining active jobs...", "worker_id", p.workerID, "queue_id", p.queueID)
 			_ = RegisterWorker(context.Background(), p.pool, p.workerID, "draining")
 			
 			done := make(chan struct{})
@@ -91,15 +91,15 @@ func (p *Pool) Run(ctx context.Context) {
 
 			select {
 			case <-done:
-				slog.Info("All running jobs completed successfully", "worker_id", p.workerID)
+				slog.Info("All running jobs completed successfully", "worker_id", p.workerID, "queue_id", p.queueID)
 			case <-time.After(10 * time.Second):
-				slog.Warn("Shutdown timeout reached, force-aborting remaining jobs...", "worker_id", p.workerID)
+				slog.Warn("Shutdown timeout reached, force-aborting remaining jobs...", "worker_id", p.workerID, "queue_id", p.queueID)
 				cancelJobs()
 				<-done
 			}
 			
 			_ = RegisterWorker(context.Background(), p.pool, p.workerID, "dead")
-			slog.Info("Graceful shutdown complete", "worker_id", p.workerID)
+			slog.Info("Graceful shutdown complete", "worker_id", p.workerID, "queue_id", p.queueID)
 			return
 
 		case notifiedQueueID := <-notifyCh:
