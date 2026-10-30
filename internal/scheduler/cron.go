@@ -122,11 +122,20 @@ func dispatchDueJobs(ctx context.Context, pool *pgxpool.Pool, parser cron.Parser
 				return fmt.Errorf("failed to update scheduled job run time: %w", err)
 			}
 
-			slog.Info("Dispatched recurring job", "job_id", due.id, "job_type", due.jobType, "queue_id", due.queueID, "next_run", nextTime)
+			slog.Info("Dispatched recurring job",
+				"scheduled_job_id", due.id,
+				"job_type", due.jobType,
+				"queue_id", due.queueID,
+				"next_run_at", nextTime,
+			)
 			return tx.Commit(ctx)
 		})
 		if err != nil {
-			slog.Error("Lock acquisition or dispatch failed for scheduled job", "job_id", due.id, "error", err)
+			slog.Error("Lock acquisition or dispatch failed for scheduled job",
+				"scheduled_job_id", due.id,
+				"queue_id", due.queueID,
+				"error", err,
+			)
 		}
 	}
 
