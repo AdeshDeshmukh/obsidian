@@ -111,3 +111,46 @@ func TestComputeBackoff(t *testing.T) {
 		})
 	}
 }
+
+func TestComputeBackoff_ExponentialJitter(t *testing.T) {
+	policy := RetryPolicy{
+		Strategy:    "exponential_jitter",
+		BaseDelayMs: 1000,
+		MaxDelayMs:  10000,
+		MaxAttempts: 5,
+	}
+
+	attempt := 2 // base * 2^2 = 4000ms. Range with ±30%: [2800ms, 5200ms]
+	minExpected := 2800 * time.Millisecond
+	maxExpected := 5200 * time.Millisecond
+
+	seenVariance := false
+	var firstVal time.Duration
+
+	for i := 0; i < 50; i++ {
+		got := ComputeBackoff(policy, attempt)
+		if got < minExpected || got > maxExpected {
+			t.Fatalf("expected delay between %v and %v, got %v", minExpected, maxExpected, got)
+		}
+		if i == 0 {
+			firstVal = got
+		} else if got != firstVal {
+			seenVariance = true
+		}
+	}
+
+	if !seenVariance {
+		t.Fatal("expected jitter to produce varying backoff values across calls")
+	}
+
+	cappingPolicy := RetryPolicy{
+		Strategy:    "exponential_jitter",
+		BaseDelayMs: 1000,
+		MaxDelayMs:  2000,
+		MaxAttempts: 5,
+	}
+	capped := ComputeBackoff(cappingPolicy, 4)
+	if capped > 2000*time.Millisecond {
+		t.Fatalf("expected backoff capped at 2000ms, got %v", capped)
+	}
+}

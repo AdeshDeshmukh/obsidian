@@ -3,19 +3,19 @@ package queue
 import (
 	"context"
 	"math"
+	"math/rand"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type RetryPolicy struct {
-	Strategy    string // fixed | linear | exponential
+	Strategy    string
 	BaseDelayMs int
 	MaxDelayMs  int
 	MaxAttempts int
 }
 
-// ComputeBackoff calculates delay based on policy strategy and attempt count
 func ComputeBackoff(p RetryPolicy, attempt int) time.Duration {
 	var delay time.Duration
 	base := time.Duration(p.BaseDelayMs) * time.Millisecond
@@ -28,6 +28,10 @@ func ComputeBackoff(p RetryPolicy, attempt int) time.Duration {
 		delay = base * time.Duration(attempt+1)
 	case "exponential":
 		delay = time.Duration(float64(base) * math.Pow(2, float64(attempt)))
+	case "exponential_jitter":
+		expDelay := float64(base) * math.Pow(2, float64(attempt))
+		jitterFactor := 0.7 + rand.Float64()*0.6
+		delay = time.Duration(expDelay * jitterFactor)
 	default:
 		delay = base
 	}

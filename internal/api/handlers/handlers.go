@@ -1181,7 +1181,7 @@ func (h *Handler) CreateRetryPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	strategy := strings.ToLower(strings.TrimSpace(req.Strategy))
-	if strategy != "fixed" && strategy != "linear" && strategy != "exponential" {
+	if strategy != "fixed" && strategy != "linear" && strategy != "exponential" && strategy != "exponential_jitter" {
 		strategy = "fixed"
 	}
 	if req.BaseDelayMs <= 0 {
