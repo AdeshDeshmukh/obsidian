@@ -302,7 +302,7 @@ func (h *Handler) ListQueues(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectId")
 
 	rows, err := h.pool.Query(r.Context(), `
-		SELECT q.id, q.name, q.priority, q.concurrency_limit, q.is_paused, q.created_at,
+		SELECT q.id, q.name, q.priority, q.concurrency_limit, q.is_paused, COALESCE(q.state::text, 'active') as state, q.created_at,
 		       count(j.id) FILTER (WHERE j.status = 'queued') as queued_count,
 		       count(j.id) FILTER (WHERE j.status = 'running') as running_count,
 		       count(j.id) FILTER (WHERE j.status = 'completed') as completed_count,
@@ -332,6 +332,7 @@ func (h *Handler) ListQueues(w http.ResponseWriter, r *http.Request) {
 		Priority         int16      `json:"priority"`
 		ConcurrencyLimit int        `json:"concurrency_limit"`
 		IsPaused         bool       `json:"is_paused"`
+		State            string     `json:"state"`
 		CreatedAt        time.Time  `json:"created_at"`
 		Stats            QueueStats `json:"stats"`
 	}
@@ -339,7 +340,7 @@ func (h *Handler) ListQueues(w http.ResponseWriter, r *http.Request) {
 	queues := []Queue{}
 	for rows.Next() {
 		var q Queue
-		if err := rows.Scan(&q.ID, &q.Name, &q.Priority, &q.ConcurrencyLimit, &q.IsPaused, &q.CreatedAt,
+		if err := rows.Scan(&q.ID, &q.Name, &q.Priority, &q.ConcurrencyLimit, &q.IsPaused, &q.State, &q.CreatedAt,
 			&q.Stats.QueuedCount, &q.Stats.RunningCount, &q.Stats.CompletedCount, &q.Stats.FailedCount); err != nil {
 			writeError(w, http.StatusInternalServerError, "scan failed")
 			return
@@ -351,9 +352,10 @@ func (h *Handler) ListQueues(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateQueueReq struct {
-	Priority         *int16 `json:"priority,omitempty"`
-	ConcurrencyLimit *int   `json:"concurrency_limit,omitempty"`
-	IsPaused         *bool  `json:"is_paused,omitempty"`
+	Priority         *int16  `json:"priority,omitempty"`
+	ConcurrencyLimit *int    `json:"concurrency_limit,omitempty"`
+	IsPaused         *bool   `json:"is_paused,omitempty"`
+	State            *string `json:"state,omitempty"`
 }
 
 func (h *Handler) UpdateQueue(w http.ResponseWriter, r *http.Request) {
@@ -375,10 +377,11 @@ func (h *Handler) UpdateQueue(w http.ResponseWriter, r *http.Request) {
 	var currentPriority int16
 	var currentLimit int
 	var currentPaused bool
+	var currentState string
 
 	err = tx.QueryRow(ctx, `
-		SELECT priority, concurrency_limit, is_paused FROM queues WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
-	`, queueID).Scan(&currentPriority, &currentLimit, &currentPaused)
+		SELECT priority, concurrency_limit, is_paused, COALESCE(state::text, 'active') FROM queues WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+	`, queueID).Scan(&currentPriority, &currentLimit, &currentPaused, &currentState)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "queue not found")
 		return
@@ -390,15 +393,27 @@ func (h *Handler) UpdateQueue(w http.ResponseWriter, r *http.Request) {
 	if req.ConcurrencyLimit != nil {
 		currentLimit = *req.ConcurrencyLimit
 	}
-	if req.IsPaused != nil {
+	if req.State != nil {
+		if !queue.IsValidQueueState(*req.State) {
+			writeError(w, http.StatusBadRequest, "invalid state: must be active, paused, draining, or maintenance")
+			return
+		}
+		currentState = *req.State
+		currentPaused = (currentState != string(queue.QueueStateActive))
+	} else if req.IsPaused != nil {
 		currentPaused = *req.IsPaused
+		if currentPaused {
+			currentState = string(queue.QueueStatePaused)
+		} else {
+			currentState = string(queue.QueueStateActive)
+		}
 	}
 
 	_, err = tx.Exec(ctx, `
 		UPDATE queues
-		SET priority = $1, concurrency_limit = $2, is_paused = $3
-		WHERE id = $4 AND deleted_at IS NULL
-	`, currentPriority, currentLimit, currentPaused, queueID)
+		SET priority = $1, concurrency_limit = $2, is_paused = $3, state = $4::queue_state
+		WHERE id = $5 AND deleted_at IS NULL
+	`, currentPriority, currentLimit, currentPaused, currentState, queueID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "update failed")
 		return
@@ -414,6 +429,7 @@ func (h *Handler) UpdateQueue(w http.ResponseWriter, r *http.Request) {
 		"priority":          currentPriority,
 		"concurrency_limit": currentLimit,
 		"is_paused":         currentPaused,
+		"state":             currentState,
 	})
 }
 

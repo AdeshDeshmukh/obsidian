@@ -57,6 +57,22 @@ func AutoMigrate(ctx context.Context, pool *pgxpool.Pool) error {
 			);
 			CREATE INDEX IF NOT EXISTS idx_job_callbacks_pending ON job_callbacks (status, last_attempt_at)
 				WHERE status = 'pending';
+			DO $$ BEGIN
+				CREATE TYPE queue_state AS ENUM ('active', 'paused', 'draining', 'maintenance');
+			EXCEPTION
+				WHEN duplicate_object THEN null;
+			END $$;
+			ALTER TABLE queues ADD COLUMN IF NOT EXISTS state queue_state NOT NULL DEFAULT 'active';
+			CREATE OR REPLACE FUNCTION sync_queue_is_paused() RETURNS TRIGGER AS $$
+			BEGIN
+				NEW.is_paused = (NEW.state != 'active');
+				RETURN NEW;
+			END;
+			$$ LANGUAGE plpgsql;
+			DROP TRIGGER IF EXISTS trg_sync_queue_is_paused ON queues;
+			CREATE TRIGGER trg_sync_queue_is_paused
+			BEFORE INSERT OR UPDATE OF state ON queues
+			FOR EACH ROW EXECUTE FUNCTION sync_queue_is_paused();
 			CREATE OR REPLACE FUNCTION notify_job_queued() RETURNS TRIGGER AS $$
 			BEGIN
 			  PERFORM pg_notify('job_queued', NEW.queue_id::text);

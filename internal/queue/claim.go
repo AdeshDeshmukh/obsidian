@@ -43,7 +43,7 @@ func ClaimBatch(ctx context.Context, pool *pgxpool.Pool, queueID, workerID strin
 			FROM jobs j
 			JOIN queues q ON j.queue_id = q.id
 			WHERE j.queue_id = $1
-			  AND q.is_paused = false
+			  AND q.state = 'active'
 			  AND q.deleted_at IS NULL
 			  AND j.status IN ('queued', 'scheduled')
 			  AND j.run_at <= now()
@@ -65,7 +65,7 @@ func ClaimBatch(ctx context.Context, pool *pgxpool.Pool, queueID, workerID strin
 			SELECT j.id, j.queue_id, j.job_type, j.payload, j.attempt
 			FROM jobs j
 			JOIN queues q ON j.queue_id = q.id
-			WHERE q.is_paused = false
+			WHERE q.state = 'active'
 			  AND q.deleted_at IS NULL
 			  AND j.status IN ('queued', 'scheduled')
 			  AND j.run_at <= now()
