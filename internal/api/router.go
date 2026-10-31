@@ -70,6 +70,7 @@ func NewRouter(pool *pgxpool.Pool) http.Handler {
 		// Jobs
 		r.Route("/api/jobs/{jobId}", func(r chi.Router) {
 			r.Get("/", h.GetJob)
+			r.Post("/progress", h.SetJobProgress)
 			r.With(middleware.RequireRole("admin", "member")).Post("/retry", h.RetryJob)
 			r.With(middleware.RequireRole("admin")).Post("/cancel", h.CancelJob) // Admin required to cancel active job
 		})
