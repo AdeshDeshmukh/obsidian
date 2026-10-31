@@ -1223,6 +1223,35 @@ func (h *Handler) ListDLQ(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, entries)
 }
 
+func (h *Handler) GetDLQTriage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	rows, err := h.pool.Query(ctx, `
+		SELECT j.job_type, d.failure_reason
+		FROM dead_letter_queue d
+		JOIN jobs j ON j.id = d.original_job_id
+		WHERE d.moved_at > now() - interval '24 hours'
+		ORDER BY d.moved_at DESC
+		LIMIT 200
+	`)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query DLQ: "+err.Error())
+		return
+	}
+	defer rows.Close()
+
+	var failures []ai.FailureItem
+	for rows.Next() {
+		var f ai.FailureItem
+		if err := rows.Scan(&f.JobType, &f.FailureReason); err == nil {
+			failures = append(failures, f)
+		}
+	}
+
+	result := ai.TriageDLQ(ctx, failures)
+	writeJSON(w, http.StatusOK, result)
+}
+
 // CreateBatchJobs Handler
 func (h *Handler) CreateBatchJobs(w http.ResponseWriter, r *http.Request) {
 	queueID := chi.URLParam(r, "queueId")
