@@ -11,6 +11,7 @@ import (
 	"obsidian/internal/api/ws"
 	"obsidian/internal/metrics"
 	"obsidian/internal/queue"
+	"obsidian/internal/webhook"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -112,6 +113,7 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 			)
 		}
 		ws.Broadcast("job.updated", map[string]interface{}{"id": job.ID, "queue_id": job.QueueID, "status": "completed"})
+		go webhook.Dispatch(context.Background(), pool, job.ID, job.QueueID, "completed", "")
 		return
 	}
 
@@ -144,6 +146,7 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 		}
 		metrics.JobsFailed.WithLabelValues(job.QueueID).Inc()
 		ws.Broadcast("job.updated", map[string]interface{}{"id": job.ID, "queue_id": job.QueueID, "status": "dead_letter"})
+		go webhook.Dispatch(context.Background(), pool, job.ID, job.QueueID, "failed", err.Error())
 		return
 	}
 
