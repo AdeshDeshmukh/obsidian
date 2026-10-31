@@ -73,6 +73,8 @@ func AutoMigrate(ctx context.Context, pool *pgxpool.Pool) error {
 			CREATE TRIGGER trg_sync_queue_is_paused
 			BEFORE INSERT OR UPDATE OF state ON queues
 			FOR EACH ROW EXECUTE FUNCTION sync_queue_is_paused();
+			ALTER TABLE job_executions ADD COLUMN IF NOT EXISTS progress INT NOT NULL DEFAULT 0 CHECK (progress >= 0 AND progress <= 100);
+			CREATE INDEX IF NOT EXISTS idx_job_executions_active ON job_executions (job_id) WHERE finished_at IS NULL;
 			CREATE OR REPLACE FUNCTION notify_job_queued() RETURNS TRIGGER AS $$
 			BEGIN
 			  PERFORM pg_notify('job_queued', NEW.queue_id::text);

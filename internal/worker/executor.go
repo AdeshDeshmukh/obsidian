@@ -91,9 +91,12 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 	defer stopHeartbeat()
 
 	start := time.Now()
-	
+
+	reporter := NewProgressReporter(ctx, pool, job.ID, job.QueueID)
+	jobCtx := WithProgressReporter(ctx, reporter)
+
 	// Dispatch handler
-	err := runHandler(ctx, job)
+	err := runHandler(jobCtx, job)
 	duration := time.Since(start)
 
 	if err == nil {
@@ -201,6 +204,7 @@ func markCompleted(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob
 	_, err = tx.Exec(ctx, `
 		UPDATE job_executions
 		SET finished_at = now(), outcome = 'success',
+		    progress = 100,
 		    duration_ms = $1
 		WHERE job_id = $2 AND finished_at IS NULL
 	`, duration.Milliseconds(), job.ID)

@@ -11,6 +11,7 @@ import (
 
 	"obsidian/internal/ai"
 	"obsidian/internal/api/middleware"
+	"obsidian/internal/api/ws"
 	"obsidian/internal/queue"
 
 	"github.com/go-chi/chi/v5"
@@ -773,6 +774,7 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 		LeaseExpiresAt *time.Time             `json:"lease_expires_at"`
 		CreatedAt      time.Time              `json:"created_at"`
 		UpdatedAt      time.Time              `json:"updated_at"`
+		Progress       int                    `json:"progress"`
 		Executions     []interface{}          `json:"executions"`
 		Logs           []interface{}          `json:"logs"`
 		AISummary      string                 `json:"ai_summary,omitempty"`
@@ -804,7 +806,7 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 	var lastErrorMsg string
 	// Fetch executions
 	execRows, err := h.pool.Query(ctx, `
-		SELECT id, worker_id, attempt, started_at, finished_at, outcome, error_message, duration_ms
+		SELECT id, worker_id, attempt, started_at, finished_at, outcome, error_message, duration_ms, progress
 		FROM job_executions
 		WHERE job_id = $1
 		ORDER BY started_at ASC
@@ -815,10 +817,12 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 			var id, attempt, durationVal interface{}
 			var workerID, startedAt, finishedAt, outcome interface{}
 			var errMsg *string
-			_ = execRows.Scan(&id, &workerID, &attempt, &startedAt, &finishedAt, &outcome, &errMsg, &durationVal)
+			var progressVal int
+			_ = execRows.Scan(&id, &workerID, &attempt, &startedAt, &finishedAt, &outcome, &errMsg, &durationVal, &progressVal)
 			if errMsg != nil {
 				lastErrorMsg = *errMsg
 			}
+			j.Progress = progressVal
 			j.Executions = append(j.Executions, map[string]interface{}{
 				"id":            id,
 				"worker_id":     workerID,
@@ -828,8 +832,13 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 				"outcome":       outcome,
 				"error_message": errMsg,
 				"duration_ms":   durationVal,
+				"progress":      progressVal,
 			})
 		}
+	}
+
+	if j.Status == "completed" {
+		j.Progress = 100
 	}
 
 	var logMsgs []string
@@ -866,6 +875,54 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, j)
+}
+
+type UpdateJobProgressReq struct {
+	Progress int `json:"progress"`
+}
+
+func (h *Handler) SetJobProgress(w http.ResponseWriter, r *http.Request) {
+	jobID := chi.URLParam(r, "jobId")
+	var req UpdateJobProgressReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid progress payload")
+		return
+	}
+
+	if req.Progress < 0 || req.Progress > 100 {
+		writeError(w, http.StatusBadRequest, "progress must be between 0 and 100")
+		return
+	}
+
+	ctx := r.Context()
+	var queueID string
+	err := h.pool.QueryRow(ctx, `SELECT queue_id FROM jobs WHERE id = $1`, jobID).Scan(&queueID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+
+	tag, err := h.pool.Exec(ctx, `
+		UPDATE job_executions
+		SET progress = $1
+		WHERE job_id = $2 AND finished_at IS NULL
+	`, req.Progress, jobID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update progress")
+		return
+	}
+
+	ws.Broadcast("job.progress", map[string]interface{}{
+		"id":       jobID,
+		"queue_id": queueID,
+		"progress": req.Progress,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"job_id":   jobID,
+		"progress": req.Progress,
+		"updated":  tag.RowsAffected() > 0,
+	})
 }
 
 func (h *Handler) RetryJob(w http.ResponseWriter, r *http.Request) {
