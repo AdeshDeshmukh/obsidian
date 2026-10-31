@@ -479,6 +479,7 @@ type CreateJobReq struct {
 	DependsOn      []string               `json:"depends_on,omitempty"`
 	BatchID        *string                `json:"batch_id,omitempty"`
 	IdempotencyKey *string                `json:"idempotency_key,omitempty"`
+	CallbackURL    *string                `json:"callback_url,omitempty"`
 }
 
 func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
@@ -600,6 +601,18 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		`, jobID, parentID)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid dependency: "+parentID)
+			return
+		}
+	}
+
+	// Register callback if requested
+	if req.CallbackURL != nil && strings.TrimSpace(*req.CallbackURL) != "" {
+		_, err = tx.Exec(ctx, `
+			INSERT INTO job_callbacks (job_id, callback_url, status)
+			VALUES ($1, $2, 'pending')
+		`, jobID, strings.TrimSpace(*req.CallbackURL))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to register job callback: "+err.Error())
 			return
 		}
 	}
@@ -1180,6 +1193,16 @@ func (h *Handler) CreateBatchJobs(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to insert batch job: "+err.Error())
 			return
+		}
+		if jReq.CallbackURL != nil && strings.TrimSpace(*jReq.CallbackURL) != "" {
+			_, err = tx.Exec(ctx, `
+				INSERT INTO job_callbacks (job_id, callback_url, status)
+				VALUES ($1, $2, 'pending')
+			`, jobID, strings.TrimSpace(*jReq.CallbackURL))
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to register batch job callback: "+err.Error())
+				return
+			}
 		}
 		createdIDs = append(createdIDs, jobID)
 	}
