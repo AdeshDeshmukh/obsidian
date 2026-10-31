@@ -60,6 +60,7 @@ func NewRouter(pool *pgxpool.Pool) http.Handler {
 		// Queues
 		r.Route("/api/queues/{queueId}", func(r chi.Router) {
 			r.With(middleware.RequireRole("admin")).Put("/", h.UpdateQueue) // Admin required for queue pause/config updates
+			r.With(middleware.RequireRole("admin")).Put("/rate-limit", h.SetQueueRateLimit)
 			r.With(middleware.RequireRole("admin")).Delete("/", h.DeleteQueue) // Soft delete queue (Admin only)
 			r.With(middleware.RequireRole("admin", "member")).Post("/jobs", h.CreateJob)
 			r.With(middleware.RequireRole("admin", "member")).Post("/jobs/batch", h.CreateBatchJobs)
