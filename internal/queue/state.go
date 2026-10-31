@@ -25,3 +25,4 @@ func (s QueueState) String() string {
 func (s QueueState) CanClaimJobs() bool {
 	return s == QueueStateActive
 }
+

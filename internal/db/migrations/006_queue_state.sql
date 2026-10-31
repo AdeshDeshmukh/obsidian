@@ -23,3 +23,4 @@ DROP TRIGGER IF EXISTS trg_sync_queue_is_paused ON queues;
 CREATE TRIGGER trg_sync_queue_is_paused
 BEFORE INSERT OR UPDATE OF state ON queues
 FOR EACH ROW EXECUTE FUNCTION sync_queue_is_paused();
+
