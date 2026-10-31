@@ -52,3 +52,4 @@ func GetProgressReporter(ctx context.Context) ProgressReporter {
 	}
 	return func(pct int) {}
 }
+

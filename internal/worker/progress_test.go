@@ -30,3 +30,4 @@ func TestProgressReporterContext(t *testing.T) {
 		t.Fatalf("expected recorded progress 75, got %d", recordedProgress)
 	}
 }
+
