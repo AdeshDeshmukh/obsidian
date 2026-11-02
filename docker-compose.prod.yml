@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: obsidian-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: obsidian
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-obsidian}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d obsidian"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: obsidian-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-obsidian}@postgres:5432/obsidian?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-obsidian-prod-secret-key-change-me}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports:
+      - "8080:8080"
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    container_name: obsidian-worker
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-obsidian}@postgres:5432/obsidian?sslmode=disable
+      CONCURRENCY: ${WORKER_CONCURRENCY:-10}
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/scheduler.Dockerfile
+    container_name: obsidian-scheduler
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-obsidian}@postgres:5432/obsidian?sslmode=disable
+
+  seeder:
+    build:
+      context: .
+      dockerfile: docker/seeder.Dockerfile
+    container_name: obsidian-seeder
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      API_URL: http://api:8080
+      SEEDER_TOKEN: ${SEEDER_TOKEN:-}
+      SEEDER_API_KEY: ${SEEDER_API_KEY:-}
+      SEED_INTERVAL: 30s
+    profiles:
+      - demo
+
+volumes:
+  postgres_data:
