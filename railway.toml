@@ -1,0 +1,25 @@
+[build]
+builder = "DOCKERFILE"
+
+[[services]]
+name = "obsidian-api"
+dockerfilePath = "docker/api.Dockerfile"
+startCommand = "/bin/api"
+
+[services.variables]
+PORT = "8080"
+
+[[services]]
+name = "obsidian-worker"
+dockerfilePath = "docker/worker.Dockerfile"
+startCommand = "/bin/worker"
+
+[[services]]
+name = "obsidian-scheduler"
+dockerfilePath = "docker/scheduler.Dockerfile"
+startCommand = "/bin/scheduler"
+
+[[services]]
+name = "obsidian-seeder"
+dockerfilePath = "docker/seeder.Dockerfile"
+startCommand = "/bin/seeder"
