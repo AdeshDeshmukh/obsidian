@@ -8,6 +8,7 @@ import (
 
 	"obsidian/internal/config"
 	"obsidian/internal/db"
+	"obsidian/internal/telemetry"
 	"obsidian/internal/worker"
 
 	"github.com/google/uuid"
@@ -19,6 +20,13 @@ func main() {
 	cfg := config.Load()
 
 	ctx := context.Background()
+
+	shutdown, err := telemetry.InitTracer(ctx, "obsidian-worker")
+	if err != nil {
+		slog.Warn("Failed to init tracer", "error", err)
+	} else {
+		defer shutdown(ctx)
+	}
 
 	// Initial short timeout connection check
 	startupCtx, startupCancel := context.WithTimeout(ctx, 10*time.Second)

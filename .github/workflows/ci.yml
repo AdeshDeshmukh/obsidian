@@ -36,6 +36,7 @@ jobs:
                   ./internal/worker/... \
                   ./internal/webhook/... \
                   ./internal/metrics/... \
+                  ./internal/telemetry/... \
                   ./client/... \
                   ./cmd/seeder/... \
                   -v -count=1 -timeout 90s
@@ -79,3 +80,4 @@ jobs:
         working-directory: dashboard
         env:
           VITE_API_URL: https://obsidian-api.up.railway.app
+
