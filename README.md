@@ -1,5 +1,7 @@
 # Obsidian — Distributed Job Scheduling Platform
 
+[![CI](https://github.com/AdeshDeshmukh/obsidian/actions/workflows/ci.yml/badge.svg)](https://github.com/AdeshDeshmukh/obsidian/actions/workflows/ci.yml)
+
 Obsidian is a highly reliable, production-inspired distributed background job scheduling and execution engine. It is built in **Go** for maximum concurrency, utilizes **PostgreSQL** for atomic locking guarantees, and provides a premium **React 18 / Vite dashboard** for queue management and real-time observability.
 
 ---
