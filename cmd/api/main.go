@@ -12,6 +12,7 @@ import (
 	"obsidian/internal/config"
 	"obsidian/internal/db"
 	"obsidian/internal/metrics"
+	"obsidian/internal/telemetry"
 )
 
 func main() {
@@ -22,6 +23,13 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	shutdown, err := telemetry.InitTracer(ctx, "obsidian-api")
+	if err != nil {
+		slog.Warn("Failed to init tracer", "error", err)
+	} else {
+		defer shutdown(ctx)
+	}
 
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {

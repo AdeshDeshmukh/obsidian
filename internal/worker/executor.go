@@ -11,9 +11,11 @@ import (
 	"obsidian/internal/api/ws"
 	"obsidian/internal/metrics"
 	"obsidian/internal/queue"
+	"obsidian/internal/telemetry"
 	"obsidian/internal/webhook"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type HandlerFunc func(ctx context.Context, payload []byte) error
@@ -78,6 +80,14 @@ func init() {
 
 // Execute runs the job handler, handles heartbeats, updates metrics and handles retries or DLQ.
 func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, workerID string) {
+	ctx, span := telemetry.Tracer.Start(ctx, "ExecuteJob")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("job_id", job.ID),
+		attribute.String("job_type", job.JobType),
+		attribute.Int("attempt", job.Attempt),
+	)
+
 	slog.Info("Running job",
 		"job_id", job.ID,
 		"job_type", job.JobType,
