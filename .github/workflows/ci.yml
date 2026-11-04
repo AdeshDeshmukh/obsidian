@@ -53,6 +53,9 @@ jobs:
       - name: Build Seeder
         run: go build -o /dev/null ./cmd/seeder
 
+      - name: Build Obsidianctl CLI
+        run: go build -o /dev/null ./cmd/obsidianctl
+
       - name: Build SDK Example
         run: go build -o /dev/null ./examples/enqueue
 
