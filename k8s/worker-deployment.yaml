@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: obsidian-worker
+  namespace: obsidian
+  labels:
+    app: obsidian-worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: obsidian-worker
+  template:
+    metadata:
+      labels:
+        app: obsidian-worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/adeshdeshmukh/obsidian-worker:latest
+          envFrom:
+            - configMapRef:
+                name: obsidian-config
+            - secretRef:
+                name: obsidian-secrets
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
