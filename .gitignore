@@ -13,3 +13,8 @@ dashboard/.vite/
 # OS & Environment
 .DS_Store
 .env
+
+# Local planning & reference specs
+codebase.md
+implementation.md
+Obsidian Roadmap Feature Plan.md
