@@ -37,8 +37,10 @@ jobs:
                   ./internal/webhook/... \
                   ./internal/metrics/... \
                   ./internal/telemetry/... \
+                  ./internal/grpc/... \
                   ./client/... \
                   ./cmd/seeder/... \
+                  ./cmd/obsidianctl/... \
                   -v -count=1 -timeout 90s
 
       - name: Build API
