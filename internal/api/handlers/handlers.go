@@ -12,6 +12,7 @@ import (
 	"obsidian/internal/ai"
 	"obsidian/internal/api/middleware"
 	"obsidian/internal/api/ws"
+	"obsidian/internal/metrics"
 	"obsidian/internal/queue"
 
 	"github.com/go-chi/chi/v5"
@@ -484,6 +485,20 @@ func (h *Handler) SetQueueRateLimit(w http.ResponseWriter, r *http.Request) {
 		"rate_per_second": req.RatePerSecond,
 		"status":          "configured",
 	})
+}
+
+func (h *Handler) GetQueueHealth(w http.ResponseWriter, r *http.Request) {
+	queueID := chi.URLParam(r, "queueId")
+	health, err := metrics.GetQueueHealth(r.Context(), h.pool, queueID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "queue not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to compute health score: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, health)
 }
 
 // Job Handlers
