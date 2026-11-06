@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:8080';
+export const API_BASE = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
 
 export interface Project {
   id: string;
@@ -7,12 +7,39 @@ export interface Project {
   created_at: string;
 }
 
+export interface QueueHealth {
+  queue_id: string;
+  queue_name: string;
+  score: number;
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  dlq_rate: number;
+  fail_rate: number;
+  queue_depth: number;
+  active_workers: number;
+}
+
+export interface DLQTriageGroup {
+  category: string;
+  count: number;
+  sample_error: string;
+}
+
+export interface DLQTriageResult {
+  summary: string;
+  primary_root_cause: string;
+  failure_groups: DLQTriageGroup[];
+  suggested_action: string;
+}
+
 export interface Queue {
   id: string;
   name: string;
   priority: number;
   concurrency_limit: number;
   is_paused: boolean;
+  state?: 'active' | 'paused' | 'draining' | 'maintenance';
+  rate_limit_per_second?: number;
+  health?: QueueHealth;
   created_at: string;
   stats?: {
     queued_count: number;
@@ -240,6 +267,36 @@ export const api = {
   // Dead Letter Queue
   listDLQ: (): Promise<DLQEntry[]> => {
     return request('/api/dlq');
+  },
+
+  getDLQTriage: (): Promise<DLQTriageResult> => {
+    return request('/api/dlq/triage');
+  },
+
+  replayDLQ: (queueId?: string, limit: number = 100): Promise<{ replayed_count: number; job_ids: string[]; status: string }> => {
+    return request('/api/dlq/replay', {
+      method: 'POST',
+      body: JSON.stringify({ queue_id: queueId, limit }),
+    });
+  },
+
+  // Queue Health & State
+  getQueueHealth: (queueId: string): Promise<QueueHealth> => {
+    return request(`/api/queues/${queueId}/health`);
+  },
+
+  setQueueRateLimit: (queueId: string, ratePerSecond: number): Promise<any> => {
+    return request(`/api/queues/${queueId}/rate-limit`, {
+      method: 'PUT',
+      body: JSON.stringify({ rate_per_second: ratePerSecond }),
+    });
+  },
+
+  updateQueueState: (queueId: string, state: string): Promise<any> => {
+    return request(`/api/queues/${queueId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ state }),
+    });
   },
 
   // Metrics
