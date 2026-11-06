@@ -69,3 +69,14 @@ type ListJobsResponse struct {
 	Limit int   `json:"limit"`
 }
 
+type ReplayDLQRequest struct {
+	QueueID *string `json:"queue_id,omitempty"`
+	Limit   int     `json:"limit,omitempty"`
+}
+
+type ReplayDLQResponse struct {
+	ReplayedCount int      `json:"replayed_count"`
+	JobIDs        []string `json:"job_ids"`
+	Status        string   `json:"status"`
+}
+

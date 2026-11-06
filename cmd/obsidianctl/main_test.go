@@ -26,7 +26,7 @@ func TestCommandHierarchy(t *testing.T) {
 		found[c.Name()] = true
 	}
 
-	for _, expected := range []string{"queue", "jobs", "workers"} {
+	for _, expected := range []string{"queue", "jobs", "workers", "dlq"} {
 		if !found[expected] {
 			t.Errorf("expected subcommand %q not found in root", expected)
 		}
@@ -91,5 +91,40 @@ func TestUpdateQueueState(t *testing.T) {
 	}
 	if !strings.Contains(capturedBody, `"paused"`) {
 		t.Errorf("expected body to contain paused, got %s", capturedBody)
+	}
+}
+
+func TestReplayDLQ(t *testing.T) {
+	oldClient := httpClient
+	var capturedPath string
+	var capturedBody string
+	httpClient = &http.Client{
+		Transport: mockRoundTripper(func(req *http.Request) (*http.Response, error) {
+			capturedPath = req.URL.Path
+			b, _ := io.ReadAll(req.Body)
+			capturedBody = string(b)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"replayed_count":5,"job_ids":["j1","j2","j3","j4","j5"],"status":"replayed"}`)),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+	defer func() { httpClient = oldClient }()
+
+	var buf bytes.Buffer
+	err := replayDLQ(&buf, "q-1", 50)
+	if err != nil {
+		t.Fatalf("replayDLQ returned error: %v", err)
+	}
+
+	if capturedPath != "/api/dlq/replay" {
+		t.Errorf("expected path /api/dlq/replay, got %s", capturedPath)
+	}
+	if !strings.Contains(capturedBody, `"queue_id":"q-1"`) || !strings.Contains(capturedBody, `"limit":50`) {
+		t.Errorf("expected body to contain queue_id and limit, got %s", capturedBody)
+	}
+	if !strings.Contains(buf.String(), "Successfully replayed 5 dead-letter jobs") {
+		t.Errorf("unexpected output: %s", buf.String())
 	}
 }

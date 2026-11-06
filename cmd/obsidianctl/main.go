@@ -32,6 +32,7 @@ func newRootCmd() *cobra.Command {
 		newQueueCmd(),
 		newJobsCmd(),
 		newWorkersCmd(),
+		newDLQCmd(),
 	)
 
 	return root
@@ -135,6 +136,63 @@ func newWorkersCmd() *cobra.Command {
 			return listWorkers(cmd.OutOrStdout())
 		},
 	}
+}
+
+func newDLQCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "dlq",
+		Short: "Dead letter queue management commands",
+	}
+
+	var queueID string
+	var limit int
+
+	replayCmd := &cobra.Command{
+		Use:   "replay",
+		Short: "Bulk replay dead-letter jobs back into queued state",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return replayDLQ(cmd.OutOrStdout(), queueID, limit)
+		},
+	}
+
+	replayCmd.Flags().StringVar(&queueID, "queue", "", "Optional queue ID filter")
+	replayCmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of DLQ jobs to replay")
+
+	cmd.AddCommand(replayCmd)
+	return cmd
+}
+
+func replayDLQ(out io.Writer, queueID string, limit int) error {
+	payload := map[string]interface{}{
+		"limit": limit,
+	}
+	if queueID != "" {
+		payload["queue_id"] = queueID
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	data, status, err := doRequest("POST", "/api/dlq/replay", strings.NewReader(string(bodyBytes)))
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("replay failed (HTTP %d): %s", status, string(data))
+	}
+
+	var resp struct {
+		ReplayedCount int      `json:"replayed_count"`
+		JobIDs        []string `json:"job_ids"`
+		Status        string   `json:"status"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "Successfully replayed %d dead-letter jobs.\n", resp.ReplayedCount)
+	return nil
 }
 
 func doRequest(method, path string, body io.Reader) ([]byte, int, error) {

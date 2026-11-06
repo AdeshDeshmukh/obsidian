@@ -190,3 +190,30 @@ func TestClientAPIError(t *testing.T) {
 	}
 }
 
+func TestClientReplayDLQ(t *testing.T) {
+	ctx := context.Background()
+	c := newMockClient(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", req.Method)
+		}
+		if req.URL.Path != "/api/dlq/replay" {
+			t.Errorf("unexpected path: %s", req.URL.Path)
+		}
+
+		body := `{"replayed_count":3,"job_ids":["j1","j2","j3"],"status":"replayed"}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	resp, err := c.ReplayDLQ(ctx, "q-1", 50)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.ReplayedCount != 3 || len(resp.JobIDs) != 3 || resp.Status != "replayed" {
+		t.Fatalf("unexpected replay response: %+v", resp)
+	}
+}
+
