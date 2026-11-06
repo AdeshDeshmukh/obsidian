@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -23,7 +24,32 @@ type HandlerFunc func(ctx context.Context, payload []byte) error
 var (
 	handlersMu sync.RWMutex
 	handlers   = make(map[string]HandlerFunc)
+
+	runningJobsMu sync.Mutex
+	runningJobs   = make(map[string]context.CancelFunc)
 )
+
+func RegisterRunningJob(jobID string, cancel context.CancelFunc) {
+	runningJobsMu.Lock()
+	defer runningJobsMu.Unlock()
+	runningJobs[jobID] = cancel
+}
+
+func UnregisterRunningJob(jobID string) {
+	runningJobsMu.Lock()
+	defer runningJobsMu.Unlock()
+	delete(runningJobs, jobID)
+}
+
+func CancelRunningJob(jobID string) bool {
+	runningJobsMu.Lock()
+	defer runningJobsMu.Unlock()
+	if cancel, ok := runningJobs[jobID]; ok {
+		cancel()
+		return true
+	}
+	return false
+}
 
 func RegisterHandler(jobType string, fn HandlerFunc) {
 	handlersMu.Lock()
@@ -102,8 +128,13 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 
 	start := time.Now()
 
-	reporter := NewProgressReporter(ctx, pool, job.ID, job.QueueID)
-	jobCtx := WithProgressReporter(ctx, reporter)
+	jobCtx, jobCancel := context.WithCancel(ctx)
+	RegisterRunningJob(job.ID, jobCancel)
+	defer UnregisterRunningJob(job.ID)
+	defer jobCancel()
+
+	reporter := NewProgressReporter(jobCtx, pool, job.ID, job.QueueID)
+	jobCtx = WithProgressReporter(jobCtx, reporter)
 
 	// Dispatch handler
 	err := runHandler(jobCtx, job)
@@ -127,6 +158,24 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 		}
 		ws.Broadcast("job.updated", map[string]interface{}{"id": job.ID, "queue_id": job.QueueID, "status": "completed"})
 		go webhook.Dispatch(context.Background(), pool, job.ID, job.QueueID, "completed", "")
+		return
+	}
+
+	if errors.Is(err, context.Canceled) || jobCtx.Err() == context.Canceled {
+		slog.Warn("Job execution was cancelled",
+			"job_id", job.ID,
+			"queue_id", job.QueueID,
+			"worker_id", workerID,
+			"duration_ms", duration.Milliseconds(),
+		)
+		if err := markCancelled(ctx, pool, job, workerID, duration); err != nil {
+			slog.Error("Failed marking job cancelled",
+				"job_id", job.ID,
+				"error", err,
+			)
+		}
+		ws.Broadcast("job.updated", map[string]interface{}{"id": job.ID, "queue_id": job.QueueID, "status": "cancelled"})
+		go webhook.Dispatch(context.Background(), pool, job.ID, job.QueueID, "cancelled", "Job execution cancelled by operator")
 		return
 	}
 
@@ -235,6 +284,35 @@ func markCompleted(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob
 	}
 	metrics.JobsCompleted.WithLabelValues(job.QueueID).Inc()
 	return nil
+}
+
+func markCancelled(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, workerID string, duration time.Duration) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, _ = tx.Exec(ctx, `
+		UPDATE jobs
+		SET status = 'cancelled', updated_at = now()
+		WHERE id = $1
+	`, job.ID)
+
+	_, _ = tx.Exec(ctx, `
+		UPDATE job_executions
+		SET finished_at = now(), outcome = 'failure',
+		    error_message = 'Job execution cancelled by operator',
+		    duration_ms = $1
+		WHERE job_id = $2 AND finished_at IS NULL
+	`, duration.Milliseconds(), job.ID)
+
+	_, _ = tx.Exec(ctx, `
+		INSERT INTO job_logs (job_id, level, message)
+		VALUES ($1, 'warn', 'Job execution cancelled by operator')
+	`, job.ID)
+
+	return tx.Commit(ctx)
 }
 
 func loadRetryPolicy(ctx context.Context, pool *pgxpool.Pool, jobID string) queue.RetryPolicy {

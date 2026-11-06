@@ -47,7 +47,9 @@ func (p *Pool) Run(ctx context.Context) {
 
 	notifyCh := make(chan string, 100)
 	databaseURL := p.pool.Config().ConnString()
-	queue.ListenForJobs(ctx, databaseURL, notifyCh)
+	queue.ListenForEvents(ctx, databaseURL, notifyCh, func(jobID string) {
+		CancelRunningJob(jobID)
+	})
 
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
