@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { 
   Activity, Play, Pause, Layers, AlertCircle, RefreshCw, Cpu, 
   BarChart2, Plus, X, LogOut, CheckCircle, 
-  FileText, Lock
+  FileText, Lock, Sparkles
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, BarChart, Bar
 } from 'recharts';
-import { api } from './api/client';
-import type { Project, Queue, Job, JobDetails, WorkerInfo, SystemHealth, ThroughputPoint, DLQEntry } from './api/client';
+import { api, API_BASE } from './api/client';
+import type { Project, Queue, Job, JobDetails, WorkerInfo, SystemHealth, ThroughputPoint, DLQEntry, DLQTriageResult } from './api/client';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(!!localStorage.getItem('token'));
@@ -40,7 +40,8 @@ export default function App() {
 
     const connectWS = () => {
       try {
-        const wsUrl = `ws://${window.location.hostname}:8080/api/ws?token=${encodeURIComponent(token)}`;
+        const wsBase = API_BASE.replace(/^http/, 'ws');
+        const wsUrl = `${wsBase}/api/ws?token=${encodeURIComponent(token)}`;
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
@@ -81,6 +82,9 @@ export default function App() {
 
   // DLQ State
   const [dlqEntries, setDlqEntries] = useState<DLQEntry[]>([]);
+  const [triageResult, setTriageResult] = useState<DLQTriageResult | null>(null);
+  const [isTriaging, setIsTriaging] = useState<boolean>(false);
+  const [isReplaying, setIsReplaying] = useState<boolean>(false);
 
   // Queues State
   const [queues, setQueues] = useState<Queue[]>([]);
@@ -175,9 +179,19 @@ export default function App() {
   const loadQueues = async (projectId: string) => {
     try {
       const qList = await api.listQueues(projectId);
-      setQueues(qList);
-      if (qList.length > 0 && !selectedQueue) {
-        setSelectedQueue(qList[0]);
+      const withHealth = await Promise.all(
+        qList.map(async (q) => {
+          try {
+            const h = await api.getQueueHealth(q.id);
+            return { ...q, health: h };
+          } catch {
+            return q;
+          }
+        })
+      );
+      setQueues(withHealth);
+      if (withHealth.length > 0 && !selectedQueue) {
+        setSelectedQueue(withHealth[0]);
       }
     } catch (e) {
       console.error(e);
@@ -280,6 +294,33 @@ export default function App() {
       if (selectedProject) loadQueues(selectedProject.id);
     } catch (e: any) {
       alert('Error updating queue: ' + e.message);
+    }
+  };
+
+  const handleRunTriage = async () => {
+    setIsTriaging(true);
+    try {
+      const res = await api.getDLQTriage();
+      setTriageResult(res);
+    } catch (err: any) {
+      alert('Error running AI triage: ' + err.message);
+    } finally {
+      setIsTriaging(false);
+    }
+  };
+
+  const handleBulkReplayDLQ = async () => {
+    if (!confirm('Replay all dead-letter jobs back into the queue?')) return;
+    setIsReplaying(true);
+    try {
+      const res = await api.replayDLQ(selectedQueue?.id);
+      alert(`Successfully replayed ${res.replayed_count} dead-letter jobs.`);
+      setTriageResult(null);
+      refreshData();
+    } catch (err: any) {
+      alert('Error replaying DLQ: ' + err.message);
+    } finally {
+      setIsReplaying(false);
     }
   };
 
@@ -523,17 +564,18 @@ export default function App() {
                   <thead>
                     <tr>
                       <th>Name</th>
+                      <th>Health</th>
                       <th>Priority</th>
-                      <th>Concurrency Limit</th>
+                      <th>Limit</th>
                       <th>Job Statistics</th>
-                      <th>Status</th>
+                      <th>State</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {queues.length === 0 ? (
                       <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                        <td colSpan={7} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', color: 'var(--text-secondary)' }}>
                             <Layers size={32} style={{ opacity: 0.3 }} />
                             <span>No queues configured. Create one to begin.</span>
@@ -544,6 +586,23 @@ export default function App() {
                       queues.map(q => (
                         <tr key={q.id}>
                           <td style={{ fontWeight: 500 }}>{q.name}</td>
+                          <td>
+                            {q.health ? (
+                              <span 
+                                className="badge" 
+                                style={{
+                                  backgroundColor: q.health.grade === 'A' ? '#059669' : q.health.grade === 'B' ? '#10b981' : q.health.grade === 'C' ? '#f59e0b' : q.health.grade === 'D' ? '#f97316' : '#ef4444',
+                                  color: '#fff',
+                                  fontWeight: 600,
+                                }}
+                                title={`Health Score: ${q.health.score}/100, DLQ: ${(q.health.dlq_rate * 100).toFixed(1)}%, Fail: ${(q.health.fail_rate * 100).toFixed(1)}%`}
+                              >
+                                Grade {q.health.grade} ({q.health.score})
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>N/A</span>
+                            )}
+                          </td>
                           <td>{q.priority}</td>
                           <td>{q.concurrency_limit}</td>
                           <td>
@@ -555,9 +614,31 @@ export default function App() {
                             </div>
                           </td>
                           <td>
-                            <span className={`badge ${q.is_paused ? 'badge-cancelled' : 'badge-completed'}`}>
-                              {q.is_paused ? 'Paused' : 'Active'}
-                            </span>
+                            <select
+                              value={q.state || (q.is_paused ? 'paused' : 'active')}
+                              onChange={async (e) => {
+                                try {
+                                  await api.updateQueueState(q.id, e.target.value);
+                                  if (selectedProject) loadQueues(selectedProject.id);
+                                } catch (err: any) {
+                                  alert('Failed to update queue state: ' + err.message);
+                                }
+                              }}
+                              style={{
+                                background: 'var(--bg-secondary)',
+                                color: 'var(--text-primary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '4px',
+                                padding: '0.2rem 0.4rem',
+                                fontSize: '0.75rem',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <option value="active">Active</option>
+                              <option value="paused">Paused</option>
+                              <option value="draining">Draining</option>
+                              <option value="maintenance">Maintenance</option>
+                            </select>
                           </td>
                           <td style={{ display: 'flex', gap: '0.5rem' }}>
                             <button 
@@ -748,7 +829,66 @@ export default function App() {
 
         {activeTab === 'dlq' && (
           <div className="card">
-            <div className="card-title">Dead Letter Queue Entries ({dlqEntries.length})</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div className="card-title" style={{ marginBottom: 0 }}>
+                Dead Letter Queue Entries ({dlqEntries.length})
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleRunTriage}
+                  disabled={isTriaging || dlqEntries.length === 0}
+                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <Sparkles size={14} /> {isTriaging ? 'Analyzing...' : 'AI Fleet Triage'}
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleBulkReplayDLQ}
+                  disabled={isReplaying || dlqEntries.length === 0}
+                  style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <RefreshCw size={14} /> {isReplaying ? 'Replaying...' : 'Replay All Jobs'}
+                </button>
+              </div>
+            </div>
+
+            {triageResult && (
+              <div
+                style={{
+                  background: 'rgba(99, 102, 241, 0.08)',
+                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                  borderRadius: '8px',
+                  padding: '1rem',
+                  marginBottom: '1.25rem',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Sparkles size={18} style={{ color: '#818cf8' }} />
+                    <span style={{ fontWeight: 600, color: '#c7d2fe' }}>Gemini AI Fleet Diagnosis</span>
+                    <span className="badge badge-failed" style={{ fontSize: '0.7rem' }}>
+                      Primary Cause: {triageResult.primary_root_cause}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setTriageResult(null)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+                  {triageResult.summary}
+                </p>
+                {triageResult.suggested_action && (
+                  <div style={{ fontSize: '0.8rem', color: '#93c5fd' }}>
+                    <strong>Recommended Action:</strong> {triageResult.suggested_action}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="table-container">
               <table>
                 <thead>
