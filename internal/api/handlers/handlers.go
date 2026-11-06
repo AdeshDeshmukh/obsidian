@@ -1267,6 +1267,120 @@ func (h *Handler) GetDLQTriage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+type ReplayDLQReq struct {
+	QueueID *string `json:"queue_id,omitempty"`
+	Limit   int     `json:"limit,omitempty"`
+}
+
+type ReplayDLQResp struct {
+	ReplayedCount int      `json:"replayed_count"`
+	JobIDs        []string `json:"job_ids"`
+	Status        string   `json:"status"`
+}
+
+func (h *Handler) ReplayDLQ(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req ReplayDLQReq
+	if r.Body != nil && r.ContentLength > 0 {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 100
+	} else if limit > 1000 {
+		limit = 1000
+	}
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "transaction failed: "+err.Error())
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	var rows pgx.Rows
+	if req.QueueID != nil && *req.QueueID != "" {
+		rows, err = tx.Query(ctx, `
+			SELECT original_job_id
+			FROM dead_letter_queue
+			WHERE queue_id = $1
+			ORDER BY moved_at ASC
+			LIMIT $2
+			FOR UPDATE
+		`, *req.QueueID, limit)
+	} else {
+		rows, err = tx.Query(ctx, `
+			SELECT original_job_id
+			FROM dead_letter_queue
+			ORDER BY moved_at ASC
+			LIMIT $1
+			FOR UPDATE
+		`, limit)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to query DLQ entries: "+err.Error())
+		return
+	}
+
+	var jobIDs []string
+	for rows.Next() {
+		var jid string
+		if err := rows.Scan(&jid); err == nil {
+			jobIDs = append(jobIDs, jid)
+		}
+	}
+	rows.Close()
+
+	if len(jobIDs) == 0 {
+		writeJSON(w, http.StatusOK, ReplayDLQResp{
+			ReplayedCount: 0,
+			JobIDs:        []string{},
+			Status:        "completed",
+		})
+		return
+	}
+
+	_, err = tx.Exec(ctx, `
+		UPDATE jobs
+		SET status = 'queued', attempt = 0, run_at = now(), updated_at = now()
+		WHERE id = ANY($1::uuid[])
+	`, jobIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update job status: "+err.Error())
+		return
+	}
+
+	_, err = tx.Exec(ctx, `
+		DELETE FROM dead_letter_queue
+		WHERE original_job_id = ANY($1::uuid[])
+	`, jobIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to clear DLQ records: "+err.Error())
+		return
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO job_logs (job_id, level, message)
+		SELECT unnest($1::uuid[]), 'info', 'Bulk replayed from dead-letter queue'
+	`, jobIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write job logs: "+err.Error())
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, "commit failed: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ReplayDLQResp{
+		ReplayedCount: len(jobIDs),
+		JobIDs:        jobIDs,
+		Status:        "replayed",
+	})
+}
+
 // CreateBatchJobs Handler
 func (h *Handler) CreateBatchJobs(w http.ResponseWriter, r *http.Request) {
 	queueID := chi.URLParam(r, "queueId")

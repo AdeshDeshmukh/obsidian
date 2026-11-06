@@ -149,3 +149,15 @@ func (c *Client) ListWorkers(ctx context.Context) ([]Worker, error) {
 	return workers, nil
 }
 
+func (c *Client) ReplayDLQ(ctx context.Context, queueID string, limit int) (*ReplayDLQResponse, error) {
+	req := ReplayDLQRequest{Limit: limit}
+	if queueID != "" {
+		req.QueueID = &queueID
+	}
+	var resp ReplayDLQResponse
+	if err := c.do(ctx, http.MethodPost, "/api/dlq/replay", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
