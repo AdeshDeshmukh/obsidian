@@ -1024,8 +1024,8 @@ func (h *Handler) CancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if status != "queued" && status != "scheduled" {
-		writeError(w, http.StatusBadRequest, "only queued or scheduled jobs can be cancelled")
+	if status != "queued" && status != "scheduled" && status != "running" {
+		writeError(w, http.StatusBadRequest, "only queued, scheduled, or running jobs can be cancelled")
 		return
 	}
 
@@ -1048,11 +1048,16 @@ func (h *Handler) CancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if status == "running" {
+		_, _ = tx.Exec(ctx, `SELECT pg_notify('job_cancelled', $1)`, jobID)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		writeError(w, http.StatusInternalServerError, "commit failed")
 		return
 	}
 
+	ws.Broadcast("job.updated", map[string]interface{}{"id": jobID, "status": "cancelled"})
 	writeJSON(w, http.StatusOK, map[string]string{"message": "job cancelled successfully"})
 }
 
