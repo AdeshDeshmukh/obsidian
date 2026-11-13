@@ -2,14 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { 
   Activity, Play, Pause, Layers, AlertCircle, RefreshCw, Cpu, 
   BarChart2, Plus, X, LogOut, CheckCircle, 
-  FileText, Lock, Sparkles
+  FileText, Lock, Sparkles, Search
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, BarChart, Bar
 } from 'recharts';
+import { motion, AnimatePresence } from 'framer-motion';
+import confetti from 'canvas-confetti';
 import { api, API_BASE } from './api/client';
 import type { Project, Queue, Job, JobDetails, WorkerInfo, SystemHealth, ThroughputPoint, DLQEntry, DLQTriageResult } from './api/client';
+import { CommandPalette } from './components/CommandPalette';
+import { JsonViewer } from './components/JsonViewer';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(!!localStorage.getItem('token'));
@@ -28,6 +32,19 @@ export default function App() {
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<'queues' | 'explorer' | 'workers' | 'dlq' | 'metrics'>('queues');
+  const [showCmdPalette, setShowCmdPalette] = useState(false);
+
+  // Global Hotkey for Command Palette (Cmd+K / Ctrl+K)
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowCmdPalette(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, []);
 
   // WebSocket Live Updates Integration
   useEffect(() => {
@@ -314,6 +331,12 @@ export default function App() {
     setIsReplaying(true);
     try {
       const res = await api.replayDLQ(selectedQueue?.id);
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#06b6d4', '#6366f1', '#10b981']
+      });
       alert(`Successfully replayed ${res.replayed_count} dead-letter jobs.`);
       setTriageResult(null);
       refreshData();
@@ -359,6 +382,12 @@ export default function App() {
       setSubmitJobCron('');
       setSubmitJobDelay(0);
       setSubmitJobDependsOn('');
+      confetti({
+        particleCount: 40,
+        spread: 50,
+        origin: { y: 0.8 },
+        colors: ['#06b6d4', '#10b981']
+      });
       loadJobs(selectedQueue.id);
     } catch (e: any) {
       alert('Error creating job: ' + e.message);
@@ -452,8 +481,14 @@ export default function App() {
       {/* Sidebar Navigation */}
       <nav className="sidebar">
         <div className="brand">
-          <div className="brand-icon">O</div>
-          <div className="brand-name">OBSIDIAN</div>
+          <div className="brand-icon-wrapper">
+            <div className="brand-icon">⬡</div>
+            <div className="brand-icon-pulse" />
+          </div>
+          <div className="brand-text">
+            <h2>OBSIDIAN</h2>
+            <span className="brand-tag">Ops Telemetry</span>
+          </div>
         </div>
 
         {/* Project Selector */}
@@ -496,6 +531,9 @@ export default function App() {
           </li>
           <li className={`nav-item ${activeTab === 'dlq' ? 'active' : ''}`} onClick={() => setActiveTab('dlq')}>
             <Lock size={18} /> Dead Letter Queue
+            {dlqEntries.length > 0 && (
+              <span className="nav-badge nav-badge-alert">{dlqEntries.length}</span>
+            )}
           </li>
           <li className={`nav-item ${activeTab === 'metrics' ? 'active' : ''}`} onClick={() => setActiveTab('metrics')}>
             <BarChart2 size={18} /> Observability
@@ -505,7 +543,7 @@ export default function App() {
         <div style={{ marginTop: 'auto' }}>
           {selectedProject && (
             <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', border: '1px dashed var(--border-color)' }}>
-              <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>API API Key:</p>
+              <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>API Key:</p>
               <code style={{ fontSize: '0.75rem', color: 'var(--text-primary)', wordBreak: 'break-all' }}>{selectedProject.api_key}</code>
             </div>
           )}
@@ -531,15 +569,19 @@ export default function App() {
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-color)', padding: '0.35rem 0.75rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600, textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: '0.4rem', color: userRole === 'admin' ? '#facc15' : userRole === 'member' ? '#60a5fa' : '#9ca3af' }}>
-              <span>{userRole === 'admin' ? '👑' : userRole === 'member' ? '🔧' : '👁'} Role: {userRole}</span>
+            <div className="command-bar-trigger" onClick={() => setShowCmdPalette(true)}>
+              <Search size={14} />
+              <span>Quick Actions</span>
+              <kbd className="kbd-shortcut">⌘K</kbd>
             </div>
 
-            <div className="live-indicator">
-              <span className="live-dot" style={{ background: wsConnected ? '#10b981' : '#f59e0b', boxShadow: wsConnected ? '0 0 8px #10b981' : '0 0 8px #f59e0b' }}></span>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                {wsConnected ? 'WebSocket Live' : 'Polling (HTTP)'}
-              </span>
+            <div className="fleet-pulse-pill">
+              <div className="pulse-dot" style={{ background: wsConnected ? '#10b981' : '#f59e0b' }} />
+              <span>{wsConnected ? 'FLEET ACTIVE' : 'RECONNECTING'}</span>
+            </div>
+
+            <div style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-color)', padding: '0.35rem 0.75rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600, textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: '0.4rem', color: userRole === 'admin' ? '#facc15' : userRole === 'member' ? '#60a5fa' : '#9ca3af' }}>
+              <span>{userRole === 'admin' ? '👑' : userRole === 'member' ? '🔧' : '👁'} {userRole}</span>
             </div>
 
             <button className="btn btn-secondary" onClick={refreshData}>
@@ -548,8 +590,16 @@ export default function App() {
           </div>
         </header>
 
-        {/* Tab content logic */}
-        {activeTab === 'queues' && (
+        {/* Tab content logic with Framer Motion spring physics */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+          >
+            {activeTab === 'queues' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div className="card">
               <div className="card-title">
@@ -1027,6 +1077,8 @@ export default function App() {
             </div>
           </div>
         )}
+          </motion.div>
+        </AnimatePresence>
       </main>
 
       {/* MODALS */}
@@ -1116,8 +1168,25 @@ export default function App() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group">
                   <label>Job Type Handler</label>
-                  <select className="form-control" value={submitJobType} onChange={e => setSubmitJobType(e.target.value)}>
+                  <select 
+                    className="form-control" 
+                    value={submitJobType} 
+                    onChange={e => {
+                      const t = e.target.value;
+                      setSubmitJobType(t);
+                      if (t === 'compute') {
+                        setSubmitJobPayload(JSON.stringify({ a: 42, b: 8 }, null, 2));
+                      } else if (t === 'log') {
+                        setSubmitJobPayload(JSON.stringify({ message: 'Ops telemetry ping' }, null, 2));
+                      } else if (t === 'sleep') {
+                        setSubmitJobPayload(JSON.stringify({ seconds: 3 }, null, 2));
+                      } else if (t === 'fail') {
+                        setSubmitJobPayload(JSON.stringify({ reason: 'Simulated exception' }, null, 2));
+                      }
+                    }}
+                  >
                     <option value="noop">noop (instant success)</option>
+                    <option value="compute">compute (structured math output)</option>
                     <option value="log">log (console logger)</option>
                     <option value="sleep">sleep (custom timer)</option>
                     <option value="fail">fail (simulates failure)</option>
@@ -1192,22 +1261,16 @@ export default function App() {
             )}
 
             <div className="form-group">
-              <label>Arguments (Payload)</label>
-              <pre style={{ background: 'rgba(0,0,0,0.3)', padding: '0.75rem', borderRadius: '8px', fontFamily: 'monospace', fontSize: '0.8rem', overflowX: 'auto' }}>
-                {JSON.stringify(selectedJob.payload, null, 2)}
-              </pre>
+              <JsonViewer data={selectedJob.payload} title="ARGUMENTS (INPUT PAYLOAD)" />
             </div>
 
             {selectedJob.result && (
-              <div className="form-group">
-                <label style={{ color: '#34d399', fontWeight: 600 }}>Execution Output (Result)</label>
-                <pre style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '0.75rem', borderRadius: '8px', fontFamily: 'monospace', fontSize: '0.8rem', overflowX: 'auto', color: '#a7f3d0' }}>
-                  {JSON.stringify(selectedJob.result, null, 2)}
-                </pre>
+              <div className="form-group" style={{ marginTop: '1rem' }}>
+                <JsonViewer data={selectedJob.result} title="STRUCTURED OUTPUT (RESULT JSONB)" />
               </div>
             )}
 
-            <div style={{ marginBottom: '1.5rem' }}>
+            <div style={{ marginBottom: '1.5rem', marginTop: '1.5rem' }}>
               <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-secondary)', fontWeight: 500, marginBottom: '0.5rem' }}>Execution Timeline</label>
               {selectedJob.executions.length === 0 ? (
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>No runs recorded yet.</p>
@@ -1255,6 +1318,18 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Global Command Palette (Cmd + K) */}
+      <CommandPalette
+        isOpen={showCmdPalette}
+        onClose={() => setShowCmdPalette(false)}
+        queues={queues}
+        onSelectQueue={(q) => setSelectedQueue(q)}
+        onNavigateTab={(tab) => setActiveTab(tab)}
+        onOpenNewJob={() => setShowSubmitJobModal(true)}
+        onOpenNewQueue={() => setShowNewQueueModal(true)}
+        onReplayDLQ={handleBulkReplayDLQ}
+      />
     </div>
   );
 }
