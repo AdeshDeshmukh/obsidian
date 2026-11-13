@@ -98,14 +98,23 @@ func ClaimBatch(ctx context.Context, pool *pgxpool.Pool, queueID, workerID strin
 	}
 	defer rows.Close()
 
-	var claimed []ClaimedJob
-	var ids []uuid.UUID
+	var candidates []ClaimedJob
 	for rows.Next() {
 		var j ClaimedJob
 		if err := rows.Scan(&j.ID, &j.QueueID, &j.JobType, &j.Payload, &j.Attempt); err != nil {
 			return nil, err
 		}
+		candidates = append(candidates, j)
+	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+
+	var claimed []ClaimedJob
+	var ids []uuid.UUID
+	for _, j := range candidates {
 		allowed, err := ConsumeToken(ctx, tx, j.QueueID)
 		if err != nil {
 			return nil, err
@@ -116,10 +125,6 @@ func ClaimBatch(ctx context.Context, pool *pgxpool.Pool, queueID, workerID strin
 
 		claimed = append(claimed, j)
 		ids = append(ids, uuid.MustParse(j.ID))
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 
 	if len(ids) == 0 {

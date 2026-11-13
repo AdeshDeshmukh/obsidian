@@ -35,3 +35,4 @@ func TestResultHandlerRegistration(t *testing.T) {
 		t.Fatalf("expected result sum 42, got %+v", res)
 	}
 }
+

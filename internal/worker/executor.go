@@ -109,6 +109,22 @@ func init() {
 	RegisterHandler("fail", func(ctx context.Context, payload []byte) error {
 		return fmt.Errorf("explicit failure simulated")
 	})
+
+	RegisterResultHandler("compute", func(ctx context.Context, payload []byte) (interface{}, error) {
+		var p struct {
+			A int `json:"a"`
+			B int `json:"b"`
+		}
+		if err := json.Unmarshal(payload, &p); err != nil {
+			return nil, fmt.Errorf("invalid compute payload: %w", err)
+		}
+		return map[string]interface{}{
+			"sum":          p.A + p.B,
+			"product":      p.A * p.B,
+			"processed_at": time.Now().UTC().Format(time.RFC3339),
+			"status":       "success",
+		}, nil
+	})
 }
 
 // Execute runs the job handler, handles heartbeats, updates metrics and handles retries or DLQ.

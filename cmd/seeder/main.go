@@ -34,25 +34,36 @@ var defaultJobTemplates = []JobTemplate{
 	{"image-queue", "noop", map[string]interface{}{"url": "https://picsum.photos/800", "width": 200}, 7},
 	{"report-queue", "sleep", map[string]interface{}{"seconds": 3}, 2},
 	{"report-queue", "log", map[string]interface{}{"message": "Quarterly report generation complete for Q3-2026"}, 2},
+	{"report-queue", "compute", map[string]interface{}{"a": 40, "b": 2}, 4},
 	{"email-queue", "fail", map[string]interface{}{"reason": "demo failure"}, 1},
 }
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	apiURL := os.Getenv("API_URL")
 	if apiURL == "" {
 		apiURL = "http://localhost:8080"
 	}
+
 	token := os.Getenv("SEEDER_TOKEN")
 	apiKey := os.Getenv("SEEDER_API_KEY")
-	if token == "" && apiKey == "" {
-		slog.Error("SEEDER_TOKEN or SEEDER_API_KEY env var required")
-		os.Exit(1)
-	}
-
-	queueIDs := make(map[string]string)
 
 	slog.Info("Obsidian demo seeder initializing", "api_url", apiURL)
 
+	if token == "" && apiKey == "" {
+		slog.Info("No credentials supplied, auto-authenticating with demo credentials...")
+		var err error
+		token, err = autoAuthenticate(ctx, apiURL)
+		if err != nil {
+			slog.Error("Auto-authentication failed", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("Auto-authenticated successfully with demo user")
+	}
+
+	queueIDs := make(map[string]string)
 	if emailQueueID := os.Getenv("EMAIL_QUEUE_ID"); emailQueueID != "" {
 		queueIDs["email-queue"] = emailQueueID
 	}
@@ -76,12 +87,17 @@ func main() {
 	}
 
 	if len(queueIDs) == 0 {
-		slog.Error("No queue IDs configured. Set QUEUE_ID, EMAIL_QUEUE_ID, IMAGE_QUEUE_ID, or REPORT_QUEUE_ID")
-		os.Exit(1)
+		slog.Info("No queue IDs configured, discovering/provisioning default queues...")
+		if err := ensureDefaultQueues(ctx, apiURL, token, apiKey, queueIDs); err != nil {
+			slog.Error("Failed to discover or provision default queues", "error", err)
+			os.Exit(1)
+		}
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	if len(queueIDs) == 0 {
+		slog.Error("No queue IDs available for seeding")
+		os.Exit(1)
+	}
 
 	interval := 30 * time.Second
 	if envInterval := os.Getenv("SEED_INTERVAL"); envInterval != "" {
@@ -107,6 +123,187 @@ func main() {
 			seedJobs(ctx, apiURL, token, apiKey, queueIDs, defaultJobTemplates)
 		}
 	}
+}
+
+func autoAuthenticate(ctx context.Context, apiURL string) (string, error) {
+	demoEmail := "demo@obsidian.local"
+	demoPassword := "demopassword123"
+
+	loginPayload, _ := json.Marshal(map[string]string{
+		"email":    demoEmail,
+		"password": demoPassword,
+	})
+
+	var lastErr error
+	for attempt := 1; attempt <= 15; attempt++ {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		default:
+		}
+
+		// Try login
+		req, err := http.NewRequestWithContext(ctx, "POST", apiURL+"/api/auth/login", bytes.NewBuffer(loginPayload))
+		if err == nil {
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := httpClient.Do(req)
+			if err == nil {
+				defer resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					var res struct {
+						Token string `json:"token"`
+					}
+					if err := json.NewDecoder(resp.Body).Decode(&res); err == nil && res.Token != "" {
+						return res.Token, nil
+					}
+				}
+			} else {
+				lastErr = err
+			}
+		}
+
+		// Try register
+		regPayload, _ := json.Marshal(map[string]string{
+			"email":    demoEmail,
+			"password": demoPassword,
+			"role":     "admin",
+		})
+		req, err = http.NewRequestWithContext(ctx, "POST", apiURL+"/api/auth/register", bytes.NewBuffer(regPayload))
+		if err == nil {
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := httpClient.Do(req)
+			if err == nil {
+				defer resp.Body.Close()
+				if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
+					var res struct {
+						Token string `json:"token"`
+					}
+					if err := json.NewDecoder(resp.Body).Decode(&res); err == nil && res.Token != "" {
+						return res.Token, nil
+					}
+				}
+			} else {
+				lastErr = err
+			}
+		}
+
+		slog.Warn("Seeder waiting for API to become available...", "attempt", attempt, "error", lastErr)
+		time.Sleep(2 * time.Second)
+	}
+
+	return "", fmt.Errorf("failed to auto-authenticate after retries: %v", lastErr)
+}
+
+func ensureDefaultQueues(ctx context.Context, apiURL, token, apiKey string, queueIDs map[string]string) error {
+	setAuthHeader := func(req *http.Request) {
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		} else if apiKey != "" {
+			req.Header.Set("X-API-Key", apiKey)
+		}
+	}
+
+	// 1. Get or create project
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL+"/api/projects", nil)
+	if err != nil {
+		return err
+	}
+	setAuthHeader(req)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var projects []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&projects); err != nil {
+		return fmt.Errorf("failed to decode projects: %w", err)
+	}
+
+	var projectID string
+	if len(projects) > 0 {
+		projectID = projects[0].ID
+	} else {
+		body, _ := json.Marshal(map[string]string{"name": "Obsidian Demo"})
+		createReq, err := http.NewRequestWithContext(ctx, "POST", apiURL+"/api/projects", bytes.NewBuffer(body))
+		if err != nil {
+			return err
+		}
+		setAuthHeader(createReq)
+		cResp, err := httpClient.Do(createReq)
+		if err != nil {
+			return err
+		}
+		defer cResp.Body.Close()
+		var newProj struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(cResp.Body).Decode(&newProj); err != nil || newProj.ID == "" {
+			return fmt.Errorf("failed to create default project: %w", err)
+		}
+		projectID = newProj.ID
+	}
+
+	// 2. Get existing queues
+	qReq, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/api/projects/%s/queues", apiURL, projectID), nil)
+	if err != nil {
+		return err
+	}
+	setAuthHeader(qReq)
+	qResp, err := httpClient.Do(qReq)
+	if err != nil {
+		return err
+	}
+	defer qResp.Body.Close()
+
+	var queues []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(qResp.Body).Decode(&queues); err != nil {
+		return fmt.Errorf("failed to decode queues: %w", err)
+	}
+
+	for _, q := range queues {
+		queueIDs[q.Name] = q.ID
+	}
+
+	targetQueues := []string{"email-queue", "image-queue", "report-queue"}
+	for _, qName := range targetQueues {
+		if _, exists := queueIDs[qName]; exists {
+			continue
+		}
+		body, _ := json.Marshal(map[string]interface{}{
+			"name":              qName,
+			"priority":          1,
+			"concurrency_limit": 10,
+		})
+		createQReq, err := http.NewRequestWithContext(ctx, "POST", fmt.Sprintf("%s/api/projects/%s/queues", apiURL, projectID), bytes.NewBuffer(body))
+		if err != nil {
+			return err
+		}
+		setAuthHeader(createQReq)
+		res, err := httpClient.Do(createQReq)
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+		var newQ struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(res.Body).Decode(&newQ); err == nil && newQ.ID != "" {
+			queueIDs[qName] = newQ.ID
+		}
+	}
+
+	if defaultID, ok := queueIDs["email-queue"]; ok {
+		queueIDs["default"] = defaultID
+	}
+	return nil
 }
 
 func seedJobs(ctx context.Context, apiURL, token, apiKey string, queueIDs map[string]string, templates []JobTemplate) {
