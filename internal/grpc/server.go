@@ -81,13 +81,15 @@ func (s *Server) GetJobStatus(ctx context.Context, req *pb.GetJobStatusRequest) 
 
 	var jobID, jobStatus string
 	var attempt, progress int32
+	var resultStr string
 
 	err := s.pool.QueryRow(ctx, `
 		SELECT j.id, j.status, j.attempt,
-		       COALESCE((SELECT je.progress FROM job_executions je WHERE je.job_id = j.id AND je.finished_at IS NULL LIMIT 1), 0)
+		       COALESCE((SELECT je.progress FROM job_executions je WHERE je.job_id = j.id AND je.finished_at IS NULL LIMIT 1), 0),
+		       COALESCE(j.result::text, '')
 		FROM jobs j
 		WHERE j.id = $1
-	`, req.JobId).Scan(&jobID, &jobStatus, &attempt, &progress)
+	`, req.JobId).Scan(&jobID, &jobStatus, &attempt, &progress, &resultStr)
 
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "job not found: %v", err)
@@ -98,6 +100,7 @@ func (s *Server) GetJobStatus(ctx context.Context, req *pb.GetJobStatusRequest) 
 		Status:   jobStatus,
 		Attempt:  attempt,
 		Progress: progress,
+		Result:   resultStr,
 	}, nil
 }
 

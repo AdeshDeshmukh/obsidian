@@ -790,6 +790,7 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 		CreatedAt      time.Time              `json:"created_at"`
 		UpdatedAt      time.Time              `json:"updated_at"`
 		Progress       int                    `json:"progress"`
+		Result         interface{}            `json:"result,omitempty"`
 		Executions     []interface{}          `json:"executions"`
 		Logs           []interface{}          `json:"logs"`
 		AISummary      string                 `json:"ai_summary,omitempty"`
@@ -801,12 +802,13 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 		Payload:    map[string]interface{}{},
 	}
 	var rawPayload []byte
+	var rawResult []byte
 
 	err := h.pool.QueryRow(ctx, `
-		SELECT id, queue_id, job_type, payload, status, priority, run_at, attempt, claimed_by, lease_expires_at, created_at, updated_at
+		SELECT id, queue_id, job_type, payload, status, priority, run_at, attempt, claimed_by, lease_expires_at, created_at, updated_at, result
 		FROM jobs
 		WHERE id = $1
-	`, jobID).Scan(&j.ID, &j.QueueID, &j.JobType, &rawPayload, &j.Status, &j.Priority, &j.RunAt, &j.Attempt, &j.ClaimedBy, &j.LeaseExpiresAt, &j.CreatedAt, &j.UpdatedAt)
+	`, jobID).Scan(&j.ID, &j.QueueID, &j.JobType, &rawPayload, &j.Status, &j.Priority, &j.RunAt, &j.Attempt, &j.ClaimedBy, &j.LeaseExpiresAt, &j.CreatedAt, &j.UpdatedAt, &rawResult)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "job not found")
@@ -817,11 +819,14 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = json.Unmarshal(rawPayload, &j.Payload)
+	if len(rawResult) > 0 {
+		_ = json.Unmarshal(rawResult, &j.Result)
+	}
 
 	var lastErrorMsg string
 	// Fetch executions
 	execRows, err := h.pool.Query(ctx, `
-		SELECT id, worker_id, attempt, started_at, finished_at, outcome, error_message, duration_ms, progress
+		SELECT id, worker_id, attempt, started_at, finished_at, outcome, error_message, duration_ms, progress, result
 		FROM job_executions
 		WHERE job_id = $1
 		ORDER BY started_at ASC
@@ -833,11 +838,16 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 			var workerID, startedAt, finishedAt, outcome interface{}
 			var errMsg *string
 			var progressVal int
-			_ = execRows.Scan(&id, &workerID, &attempt, &startedAt, &finishedAt, &outcome, &errMsg, &durationVal, &progressVal)
+			var execResultBytes []byte
+			_ = execRows.Scan(&id, &workerID, &attempt, &startedAt, &finishedAt, &outcome, &errMsg, &durationVal, &progressVal, &execResultBytes)
 			if errMsg != nil {
 				lastErrorMsg = *errMsg
 			}
 			j.Progress = progressVal
+			var execResult interface{}
+			if len(execResultBytes) > 0 {
+				_ = json.Unmarshal(execResultBytes, &execResult)
+			}
 			j.Executions = append(j.Executions, map[string]interface{}{
 				"id":            id,
 				"worker_id":     workerID,
@@ -848,6 +858,7 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 				"error_message": errMsg,
 				"duration_ms":   durationVal,
 				"progress":      progressVal,
+				"result":        execResult,
 			})
 		}
 	}
