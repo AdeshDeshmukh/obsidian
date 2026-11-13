@@ -88,3 +88,4 @@ This guide walks you through deploying the complete Obsidian stack (PostgreSQL d
 * **Cloudflare Pages (Frontend):** 100% free with unlimited bandwidth. Connect `dashboard/` with build command `npm run build` and output directory `dist`.
 * **Koyeb (Backend):** Free micro container instance running Docker with zero sleep timeouts.
 * **Fly.io (Backend):** Free tier allows up to 3 shared CPU VMs using `fly launch`.
+
