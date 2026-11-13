@@ -1,5 +1,5 @@
 services:
-  # Obsidian Core REST & WebSocket API
+  # Obsidian Core REST & WebSocket API with Embedded Background Worker Pool
   - type: web
     name: obsidian-api
     runtime: docker
@@ -11,25 +11,10 @@ services:
       - key: PORT
         value: 8080
       - key: DATABASE_URL
-        sync: false # Set to your free Neon or Supabase PostgreSQL connection string
+        sync: false # Set to your free Neon PostgreSQL connection string
       - key: JWT_SECRET
         generateValue: true
+      - key: EMBED_WORKER
+        value: "true"
       - key: GEMINI_API_KEY
         sync: false # Optional Gemini key for DLQ AI triage
-
-  # Obsidian Background Worker Fleet
-  - type: worker
-    name: obsidian-worker
-    runtime: docker
-    dockerfilePath: docker/worker.Dockerfile
-    dockerContext: .
-    plan: free
-    region: oregon
-    envVars:
-      - key: DATABASE_URL
-        fromService:
-          type: web
-          name: obsidian-api
-          envVarKey: DATABASE_URL
-      - key: CONCURRENCY
-        value: 10

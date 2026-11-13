@@ -13,6 +13,9 @@ import (
 	"obsidian/internal/db"
 	"obsidian/internal/metrics"
 	"obsidian/internal/telemetry"
+	"obsidian/internal/worker"
+
+	"github.com/google/uuid"
 )
 
 func main() {
@@ -44,6 +47,18 @@ func main() {
 	}
 
 	metrics.StartMetricsScraper(context.Background(), pool)
+
+	// If running in single-service mode (e.g. Render Free Tier), start the embedded worker pool
+	if os.Getenv("EMBED_WORKER") != "false" {
+		workerID := uuid.New().String()
+		concurrency := cfg.Concurrency
+		if concurrency <= 0 {
+			concurrency = 10
+		}
+		wPool := worker.New(pool, workerID, "", concurrency)
+		go wPool.Run(context.Background())
+		slog.Info("Embedded worker pool started in API container", "worker_id", workerID, "concurrency", concurrency)
+	}
 
 	router := api.NewRouter(pool)
 
