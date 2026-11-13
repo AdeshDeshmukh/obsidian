@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Activity, Play, Pause, Layers, AlertCircle, RefreshCw, Cpu, 
   BarChart2, Plus, X, LogOut, CheckCircle, 
-  FileText, Lock, Sparkles, Search
+  FileText, Lock, Sparkles, Search, Mail, Zap, ShieldCheck, ArrowRight
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -428,49 +428,115 @@ export default function App() {
   if (!isLoggedIn) {
     return (
       <div className="auth-container">
-        <div className="card auth-card">
-          <div className="brand" style={{ justifyContent: 'center', marginBottom: '2rem' }}>
-            <div className="brand-icon">O</div>
-            <div className="brand-name">OBSIDIAN</div>
+        <div className="auth-ambient-grid" />
+        <div className="auth-card">
+          <div className="auth-header">
+            <div className="auth-logo-badge">
+              <div className="auth-logo-icon">⬡</div>
+              <div className="brand-icon-pulse" />
+            </div>
+            <h1 className="auth-title">OBSIDIAN</h1>
+            <p className="auth-subtitle">
+              Distributed Task Orchestration & Background Engine
+            </p>
           </div>
-          <h2 style={{ textAlign: 'center', marginBottom: '1.5rem', fontWeight: 500 }}>
-            {isRegisterMode ? 'Create Account' : 'Welcome Back'}
-          </h2>
+
+          <div className="auth-segmented-tabs">
+            <button
+              type="button"
+              className={`auth-tab-btn ${!isRegisterMode ? 'active' : ''}`}
+              onClick={() => {
+                setIsRegisterMode(false);
+                setAuthError('');
+              }}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              className={`auth-tab-btn ${isRegisterMode ? 'active' : ''}`}
+              onClick={() => {
+                setIsRegisterMode(true);
+                setAuthError('');
+              }}
+            >
+              Create Account
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="auth-demo-pill"
+            onClick={() => {
+              setEmail('demo@obsidian.local');
+              setPassword('demopassword123');
+              setIsRegisterMode(false);
+              setAuthError('');
+            }}
+          >
+            <Zap size={14} />
+            <span>Fill Demo Credentials (demo@obsidian.local)</span>
+          </button>
+
           <form onSubmit={handleAuth}>
-            {authError && <div style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.875rem' }}>{authError}</div>}
+            {authError && (
+              <div style={{
+                color: '#f87171',
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                padding: '0.75rem 1rem',
+                borderRadius: '8px',
+                marginBottom: '1.25rem',
+                fontSize: '0.84rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}>
+                <AlertCircle size={15} />
+                <span>{authError}</span>
+              </div>
+            )}
+
             <div className="form-group">
-              <label>Email Address</label>
-              <input 
-                type="email" 
-                className="form-control" 
-                value={email} 
-                onChange={e => setEmail(e.target.value)} 
-                required 
-              />
+              <label>Work Email</label>
+              <div className="auth-input-group">
+                <Mail size={16} className="auth-input-icon" />
+                <input 
+                  type="email" 
+                  className="auth-input" 
+                  placeholder="name@company.com"
+                  value={email} 
+                  onChange={e => setEmail(e.target.value)} 
+                  required 
+                />
+              </div>
             </div>
-            <div className="form-group">
+
+            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
               <label>Password</label>
-              <input 
-                type="password" 
-                className="form-control" 
-                value={password} 
-                onChange={e => setPassword(e.target.value)} 
-                required 
-              />
+              <div className="auth-input-group">
+                <Lock size={16} className="auth-input-icon" />
+                <input 
+                  type="password" 
+                  className="auth-input" 
+                  placeholder="••••••••••••"
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)} 
+                  required 
+                />
+              </div>
             </div>
-            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '1rem' }}>
-              {isRegisterMode ? 'Sign Up' : 'Sign In'}
+
+            <button type="submit" className="auth-submit-btn">
+              <span>{isRegisterMode ? 'Create Fleet Account' : 'Authenticate Fleet Console'}</span>
+              <ArrowRight size={16} />
             </button>
           </form>
-          <p style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-            {isRegisterMode ? 'Already have an account?' : "Don't have an account?"}{' '}
-            <span 
-              style={{ color: 'var(--accent-blue)', cursor: 'pointer', fontWeight: 500 }}
-              onClick={() => setIsRegisterMode(!isRegisterMode)}
-            >
-              {isRegisterMode ? 'Sign In' : 'Sign Up'}
-            </span>
-          </p>
+
+          <div className="auth-footer-shield">
+            <ShieldCheck size={14} color="#34d399" />
+            <span>PostgreSQL 16 Native Role-Based Auth</span>
+          </div>
         </div>
       </div>
     );
