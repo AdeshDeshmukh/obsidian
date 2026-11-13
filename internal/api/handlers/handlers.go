@@ -679,7 +679,7 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	jobTypeFilter := r.URL.Query().Get("job_type")
 
 	query := `
-		SELECT j.id, j.job_type, j.status, j.priority, j.run_at, j.attempt, j.created_at, j.updated_at
+		SELECT j.id, j.job_type, j.status, j.priority, j.run_at, j.attempt, j.created_at, j.updated_at, j.result
 		FROM jobs j
 		JOIN queues q ON j.queue_id = q.id
 		WHERE j.queue_id = $1 AND q.deleted_at IS NULL
@@ -728,22 +728,30 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type Job struct {
-		ID        string    `json:"id"`
-		JobType   string    `json:"job_type"`
-		Status    string    `json:"status"`
-		Priority  int16     `json:"priority"`
-		RunAt     time.Time `json:"run_at"`
-		Attempt   int       `json:"attempt"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
+		ID        string      `json:"id"`
+		JobType   string      `json:"job_type"`
+		Status    string      `json:"status"`
+		Priority  int16       `json:"priority"`
+		RunAt     time.Time   `json:"run_at"`
+		Attempt   int         `json:"attempt"`
+		CreatedAt time.Time   `json:"created_at"`
+		UpdatedAt time.Time   `json:"updated_at"`
+		Result    interface{} `json:"result,omitempty"`
 	}
 
 	jobs := []Job{}
 	for rows.Next() {
 		var j Job
-		if err := rows.Scan(&j.ID, &j.JobType, &j.Status, &j.Priority, &j.RunAt, &j.Attempt, &j.CreatedAt, &j.UpdatedAt); err != nil {
+		var resultBytes []byte
+		if err := rows.Scan(&j.ID, &j.JobType, &j.Status, &j.Priority, &j.RunAt, &j.Attempt, &j.CreatedAt, &j.UpdatedAt, &resultBytes); err != nil {
 			writeError(w, http.StatusInternalServerError, "scan failed")
 			return
+		}
+		if len(resultBytes) > 0 {
+			var parsed interface{}
+			if err := json.Unmarshal(resultBytes, &parsed); err == nil {
+				j.Result = parsed
+			}
 		}
 		jobs = append(jobs, j)
 	}
