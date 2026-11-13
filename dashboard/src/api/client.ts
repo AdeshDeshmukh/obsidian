@@ -56,6 +56,7 @@ export interface Job {
   priority: number;
   run_at: string;
   attempt: number;
+  result?: any;
   created_at: string;
   updated_at: string;
 }
@@ -69,6 +70,7 @@ export interface JobExecution {
   outcome: 'success' | 'failure' | 'timeout' | null;
   error_message: string | null;
   duration_ms: number | null;
+  result?: any;
 }
 
 export interface JobLog {

@@ -1198,6 +1198,15 @@ export default function App() {
               </pre>
             </div>
 
+            {selectedJob.result && (
+              <div className="form-group">
+                <label style={{ color: '#34d399', fontWeight: 600 }}>Execution Output (Result)</label>
+                <pre style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '0.75rem', borderRadius: '8px', fontFamily: 'monospace', fontSize: '0.8rem', overflowX: 'auto', color: '#a7f3d0' }}>
+                  {JSON.stringify(selectedJob.result, null, 2)}
+                </pre>
+              </div>
+            )}
+
             <div style={{ marginBottom: '1.5rem' }}>
               <label style={{ display: 'block', fontSize: '0.875rem', color: 'var(--text-secondary)', fontWeight: 500, marginBottom: '0.5rem' }}>Execution Timeline</label>
               {selectedJob.executions.length === 0 ? (
@@ -1236,7 +1245,7 @@ export default function App() {
                   <RefreshCw size={16} /> Re-enqueue Job
                 </button>
               )}
-              {(selectedJob.status === 'queued' || selectedJob.status === 'scheduled') && (
+              {(selectedJob.status === 'queued' || selectedJob.status === 'scheduled' || selectedJob.status === 'running') && (
                 <button type="button" className="btn btn-danger" onClick={() => handleCancelJob(selectedJob.id)}>
                   Cancel Job
                 </button>

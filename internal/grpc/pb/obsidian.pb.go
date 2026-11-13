@@ -216,6 +216,7 @@ type GetJobStatusResponse struct {
 	Attempt       int32                  `protobuf:"varint,3,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	Progress      int32                  `protobuf:"varint,4,opt,name=progress,proto3" json:"progress,omitempty"`
 	ErrorMsg      string                 `protobuf:"bytes,5,opt,name=error_msg,json=errorMsg,proto3" json:"error_msg,omitempty"`
+	Result        string                 `protobuf:"bytes,6,opt,name=result,proto3" json:"result,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -281,6 +282,13 @@ func (x *GetJobStatusResponse) GetProgress() int32 {
 func (x *GetJobStatusResponse) GetErrorMsg() string {
 	if x != nil {
 		return x.ErrorMsg
+	}
+	return ""
+}
+
+func (x *GetJobStatusResponse) GetResult() string {
+	if x != nil {
+		return x.Result
 	}
 	return ""
 }
@@ -546,13 +554,14 @@ const file_proto_obsidian_proto_rawDesc = "" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1c\n" +
 	"\tduplicate\x18\x03 \x01(\bR\tduplicate\",\n" +
 	"\x13GetJobStatusRequest\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"\x98\x01\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"\xb0\x01\n" +
 	"\x14GetJobStatusResponse\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
 	"\aattempt\x18\x03 \x01(\x05R\aattempt\x12\x1a\n" +
 	"\bprogress\x18\x04 \x01(\x05R\bprogress\x12\x1b\n" +
-	"\terror_msg\x18\x05 \x01(\tR\berrorMsg\")\n" +
+	"\terror_msg\x18\x05 \x01(\tR\berrorMsg\x12\x16\n" +
+	"\x06result\x18\x06 \x01(\tR\x06result\")\n" +
 	"\x10CancelJobRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"-\n" +
 	"\x11CancelJobResponse\x12\x18\n" +

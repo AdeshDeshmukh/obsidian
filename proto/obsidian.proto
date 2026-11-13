@@ -35,6 +35,7 @@ message GetJobStatusResponse {
     int32  attempt   = 3;
     int32  progress  = 4;
     string error_msg = 5;
+    string result    = 6;
 }
 
 message CancelJobRequest {

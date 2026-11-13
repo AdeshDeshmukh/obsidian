@@ -20,10 +20,11 @@ import (
 )
 
 type HandlerFunc func(ctx context.Context, payload []byte) error
+type ResultHandlerFunc func(ctx context.Context, payload []byte) (interface{}, error)
 
 var (
 	handlersMu sync.RWMutex
-	handlers   = make(map[string]HandlerFunc)
+	handlers   = make(map[string]ResultHandlerFunc)
 
 	runningJobsMu sync.Mutex
 	runningJobs   = make(map[string]context.CancelFunc)
@@ -52,6 +53,12 @@ func CancelRunningJob(jobID string) bool {
 }
 
 func RegisterHandler(jobType string, fn HandlerFunc) {
+	RegisterResultHandler(jobType, func(ctx context.Context, payload []byte) (interface{}, error) {
+		return nil, fn(ctx, payload)
+	})
+}
+
+func RegisterResultHandler(jobType string, fn ResultHandlerFunc) {
 	handlersMu.Lock()
 	defer handlersMu.Unlock()
 	handlers[jobType] = fn
@@ -137,7 +144,7 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 	jobCtx = WithProgressReporter(jobCtx, reporter)
 
 	// Dispatch handler
-	err := runHandler(jobCtx, job)
+	res, err := runHandler(jobCtx, job)
 	duration := time.Since(start)
 
 	if err == nil {
@@ -148,7 +155,7 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 			"worker_id", workerID,
 			"duration_ms", duration.Milliseconds(),
 		)
-		if err := markCompleted(ctx, pool, job, workerID, duration); err != nil {
+		if err := markCompleted(ctx, pool, job, workerID, duration, res); err != nil {
 			slog.Error("Failed marking job completed",
 				"job_id", job.ID,
 				"queue_id", job.QueueID,
@@ -156,7 +163,7 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 				"error", err,
 			)
 		}
-		ws.Broadcast("job.updated", map[string]interface{}{"id": job.ID, "queue_id": job.QueueID, "status": "completed"})
+		ws.Broadcast("job.updated", map[string]interface{}{"id": job.ID, "queue_id": job.QueueID, "status": "completed", "result": res})
 		go webhook.Dispatch(context.Background(), pool, job.ID, job.QueueID, "completed", "")
 		return
 	}
@@ -232,30 +239,35 @@ func Execute(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, work
 	ws.Broadcast("job.updated", map[string]interface{}{"id": job.ID, "queue_id": job.QueueID, "status": "queued"})
 }
 
-func runHandler(ctx context.Context, job queue.ClaimedJob) error {
+func runHandler(ctx context.Context, job queue.ClaimedJob) (interface{}, error) {
 	handlersMu.RLock()
 	handler, ok := handlers[job.JobType]
 	handlersMu.RUnlock()
 
 	if !ok {
-		return fmt.Errorf("no handler registered for job type: %s", job.JobType)
+		return nil, fmt.Errorf("no handler registered for job type: %s", job.JobType)
 	}
 
 	return handler(ctx, job.Payload)
 }
 
-func markCompleted(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, workerID string, duration time.Duration) error {
+func markCompleted(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob, workerID string, duration time.Duration, result interface{}) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
+	var resultJSON []byte
+	if result != nil {
+		resultJSON, _ = json.Marshal(result)
+	}
+
 	_, err = tx.Exec(ctx, `
 		UPDATE jobs
-		SET status = 'completed', updated_at = now()
+		SET status = 'completed', result = $2, updated_at = now()
 		WHERE id = $1
-	`, job.ID)
+	`, job.ID, resultJSON)
 	if err != nil {
 		return err
 	}
@@ -264,9 +276,10 @@ func markCompleted(ctx context.Context, pool *pgxpool.Pool, job queue.ClaimedJob
 		UPDATE job_executions
 		SET finished_at = now(), outcome = 'success',
 		    progress = 100,
-		    duration_ms = $1
-		WHERE job_id = $2 AND finished_at IS NULL
-	`, duration.Milliseconds(), job.ID)
+		    result = $1,
+		    duration_ms = $2
+		WHERE job_id = $3 AND finished_at IS NULL
+	`, resultJSON, duration.Milliseconds(), job.ID)
 	if err != nil {
 		return err
 	}

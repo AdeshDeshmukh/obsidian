@@ -12,6 +12,7 @@ type Job struct {
 	IdempotencyKey string                 `json:"idempotency_key,omitempty"`
 	Attempt        int                    `json:"attempt,omitempty"`
 	Progress       int                    `json:"progress,omitempty"`
+	Result         interface{}            `json:"result,omitempty"`
 	RunAt          time.Time              `json:"run_at,omitempty"`
 	CreatedAt      time.Time              `json:"created_at,omitempty"`
 	UpdatedAt      time.Time              `json:"updated_at,omitempty"`
