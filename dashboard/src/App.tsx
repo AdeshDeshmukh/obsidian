@@ -424,118 +424,206 @@ export default function App() {
     }
   };
 
-  // Auth Screen
+  // Auth Screen (Warm Cream & Obsidian Architectural Split)
   if (!isLoggedIn) {
     return (
-      <div className="auth-container">
-        <div className="auth-ambient-grid" />
-        <div className="auth-card">
-          <div className="auth-header">
-            <div className="auth-logo-badge">
-              <div className="auth-logo-icon">⬡</div>
-              <div className="brand-icon-pulse" />
+      <div className="auth-split-wrapper">
+        {/* Left Hero Showcase */}
+        <div className="auth-showcase-panel">
+          <div className="showcase-brand-header">
+            <div className="showcase-logo-icon">⬡</div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span className="showcase-brand-name">OBSIDIAN</span>
+                <span className="showcase-brand-badge">Postgres Native</span>
+              </div>
             </div>
-            <h1 className="auth-title">OBSIDIAN</h1>
-            <p className="auth-subtitle">
-              Distributed Task Orchestration & Background Engine
-            </p>
           </div>
 
-          <div className="auth-segmented-tabs">
+          <div className="showcase-content">
+            <div className="showcase-eyebrow">
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#34d399', display: 'inline-block', boxShadow: '0 0 8px #34d399' }} />
+              HIGH-CONCURRENCY DISTRIBUTED QUEUES
+            </div>
+
+            <h1 className="showcase-title">
+              Mission control for <span>async workloads</span>.
+            </h1>
+
+            <p className="showcase-description">
+              Lock-free background job queues, DAG dependency graphs, and automated DLQ recovery—powered natively by PostgreSQL 16 without Redis or RabbitMQ dependencies.
+            </p>
+
+            {/* Pipeline Architecture Diagram */}
+            <div className="pipeline-diagram">
+              <div className="pipeline-diagram-header">
+                <span>Core Execution Pipeline</span>
+                <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399' }} />
+                  Zero-Contention
+                </span>
+              </div>
+              <div className="pipeline-flow">
+                <div className="pipeline-node" style={{ borderColor: 'rgba(245, 158, 11, 0.4)' }}>
+                  <Layers size={14} color="#f59e0b" />
+                  <span>Enqueued</span>
+                </div>
+                <span className="pipeline-arrow">&rarr;</span>
+                <div className="pipeline-node" style={{ borderColor: 'rgba(56, 189, 248, 0.4)' }}>
+                  <Cpu size={14} color="#38bdf8" />
+                  <span>SKIP LOCKED</span>
+                </div>
+                <span className="pipeline-arrow">&rarr;</span>
+                <div className="pipeline-node" style={{ borderColor: 'rgba(16, 185, 129, 0.4)' }}>
+                  <CheckCircle size={14} color="#34d399" />
+                  <span>JSONB Result</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="showcase-feature-list">
+              <div className="showcase-feature-item">
+                <div className="showcase-feature-dot" />
+                <span>Zero message broker overhead</span>
+              </div>
+              <div className="showcase-feature-item">
+                <div className="showcase-feature-dot" />
+                <span>Cooperative LISTEN/NOTIFY cancellation</span>
+              </div>
+              <div className="showcase-feature-item">
+                <div className="showcase-feature-dot" />
+                <span>AI DLQ Triage with Gemini 2.5</span>
+              </div>
+              <div className="showcase-feature-item">
+                <div className="showcase-feature-dot" />
+                <span>ACID transaction safety guarantee</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="showcase-footer">
+            <span>Obsidian v1.4.0</span>
+            <span>&bull;</span>
+            <span>PostgreSQL 16 Engine</span>
+            <span>&bull;</span>
+            <span>Go 1.23 Concurrency Pool</span>
+          </div>
+        </div>
+
+        {/* Right Form Panel: The Warm Cream & Obsidian Auth Deck */}
+        <div className="auth-form-panel">
+          <div className="cream-card">
+            <div className="cream-card-header">
+              <div style={{ display: 'inline-flex', padding: '0.3rem 0.65rem', borderRadius: '6px', background: '#f3efe6', color: '#78716c', fontSize: '0.72rem', fontFamily: 'var(--font-mono)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '0.75rem' }}>
+                Secure Console Access
+              </div>
+              <h2 className="cream-card-title">
+                {isRegisterMode ? 'Deploy Your Fleet' : 'Welcome to Obsidian'}
+              </h2>
+              <p className="cream-card-subtitle">
+                {isRegisterMode 
+                  ? 'Create an administrative workspace to start orchestrating queues.'
+                  : 'Enter your workspace credentials to access real-time telemetry.'}
+              </p>
+            </div>
+
+            <div className="cream-tabs">
+              <button
+                type="button"
+                className={`cream-tab-btn ${!isRegisterMode ? 'active' : ''}`}
+                onClick={() => {
+                  setIsRegisterMode(false);
+                  setAuthError('');
+                }}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                className={`cream-tab-btn ${isRegisterMode ? 'active' : ''}`}
+                onClick={() => {
+                  setIsRegisterMode(true);
+                  setAuthError('');
+                }}
+              >
+                Create Account
+              </button>
+            </div>
+
             <button
               type="button"
-              className={`auth-tab-btn ${!isRegisterMode ? 'active' : ''}`}
+              className="cream-demo-pill"
               onClick={() => {
+                setEmail('demo@obsidian.local');
+                setPassword('demopassword123');
                 setIsRegisterMode(false);
                 setAuthError('');
               }}
+              title="Click to automatically load the pre-configured demo account"
             >
-              Sign In
+              <Zap size={14} color="#b45309" />
+              <span>⚡ One-Click Demo Credentials</span>
             </button>
-            <button
-              type="button"
-              className={`auth-tab-btn ${isRegisterMode ? 'active' : ''}`}
-              onClick={() => {
-                setIsRegisterMode(true);
-                setAuthError('');
-              }}
-            >
-              Create Account
-            </button>
-          </div>
 
-          <button
-            type="button"
-            className="auth-demo-pill"
-            onClick={() => {
-              setEmail('demo@obsidian.local');
-              setPassword('demopassword123');
-              setIsRegisterMode(false);
-              setAuthError('');
-            }}
-          >
-            <Zap size={14} />
-            <span>Fill Demo Credentials (demo@obsidian.local)</span>
-          </button>
+            <form onSubmit={handleAuth}>
+              {authError && (
+                <div style={{
+                  color: '#b91c1c',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  padding: '0.75rem 1rem',
+                  borderRadius: '10px',
+                  marginBottom: '1.25rem',
+                  fontSize: '0.84rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}>
+                  <AlertCircle size={15} color="#dc2626" />
+                  <span>{authError}</span>
+                </div>
+              )}
 
-          <form onSubmit={handleAuth}>
-            {authError && (
-              <div style={{
-                color: '#f87171',
-                background: 'rgba(239, 68, 68, 0.12)',
-                border: '1px solid rgba(239, 68, 68, 0.25)',
-                padding: '0.75rem 1rem',
-                borderRadius: '8px',
-                marginBottom: '1.25rem',
-                fontSize: '0.84rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}>
-                <AlertCircle size={15} />
-                <span>{authError}</span>
+              <div className="cream-form-group">
+                <label>Work Email</label>
+                <div className="cream-input-wrapper">
+                  <Mail size={16} className="cream-input-icon" />
+                  <input 
+                    type="email" 
+                    className="cream-input" 
+                    placeholder="name@company.com"
+                    value={email} 
+                    onChange={e => setEmail(e.target.value)} 
+                    required 
+                  />
+                </div>
               </div>
-            )}
 
-            <div className="form-group">
-              <label>Work Email</label>
-              <div className="auth-input-group">
-                <Mail size={16} className="auth-input-icon" />
-                <input 
-                  type="email" 
-                  className="auth-input" 
-                  placeholder="name@company.com"
-                  value={email} 
-                  onChange={e => setEmail(e.target.value)} 
-                  required 
-                />
+              <div className="cream-form-group" style={{ marginBottom: '1.5rem' }}>
+                <label>Password</label>
+                <div className="cream-input-wrapper">
+                  <Lock size={16} className="cream-input-icon" />
+                  <input 
+                    type="password" 
+                    className="cream-input" 
+                    placeholder="••••••••••••"
+                    value={password} 
+                    onChange={e => setPassword(e.target.value)} 
+                    required 
+                  />
+                </div>
               </div>
+
+              <button type="submit" className="cream-submit-btn">
+                <span>{isRegisterMode ? 'Create Fleet Account' : 'Authenticate Fleet Console'}</span>
+                <ArrowRight size={16} />
+              </button>
+            </form>
+
+            <div className="cream-footer">
+              <ShieldCheck size={14} color="#059669" />
+              <span>Protected by PostgreSQL 16 Role-Based Security</span>
             </div>
-
-            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-              <label>Password</label>
-              <div className="auth-input-group">
-                <Lock size={16} className="auth-input-icon" />
-                <input 
-                  type="password" 
-                  className="auth-input" 
-                  placeholder="••••••••••••"
-                  value={password} 
-                  onChange={e => setPassword(e.target.value)} 
-                  required 
-                />
-              </div>
-            </div>
-
-            <button type="submit" className="auth-submit-btn">
-              <span>{isRegisterMode ? 'Create Fleet Account' : 'Authenticate Fleet Console'}</span>
-              <ArrowRight size={16} />
-            </button>
-          </form>
-
-          <div className="auth-footer-shield">
-            <ShieldCheck size={14} color="#34d399" />
-            <span>PostgreSQL 16 Native Role-Based Auth</span>
           </div>
         </div>
       </div>
